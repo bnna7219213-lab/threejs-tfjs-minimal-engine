@@ -1,0 +1,2106 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>兽猎纪元 · 单机回合RPG</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@600;700;900&family=Noto+Sans+SC:wght@400;500;700;900&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   兽猎纪元 · 设计系统 Design Tokens
+   世界观：猎人野外追踪日志 —— 苔炭暗色 / 黄铜纹样 / 火炭与寒霜双强调色
+============================================================ */
+:root{
+  --void:#14170f;        /* 背景：深苔炭色 */
+  --void-2:#0d0f0a;       /* 更深背景，用于渐变 */
+  --iron:#23261c;         /* 面板底色 */
+  --iron-2:#2c3024;       /* 面板高亮/悬浮 */
+  --iron-3:#181b12;       /* 面板凹陷区（日志滚动区）*/
+  --bone:#e7e0ce;         /* 主文字：骨白/羊皮纸白 */
+  --bone-dim:#a9a38e;     /* 次要文字 */
+  --bone-faint:#6f6b5a;   /* 更弱文字/禁用 */
+  --brass:#b08a4e;        /* 黄铜：边框/纹样/中性强调 */
+  --brass-bright:#e0b876; /* 黄铜高光 */
+  --ember:#e37b3c;        /* 火炭橙：主行动色/火属性/终结技 */
+  --ember-dim:#8a4a26;
+  --rust:#a24b3f;         /* 锈红：HP/伤害/危险 */
+  --rust-bright:#d06553;
+  --frost:#6fafa8;        /* 寒霜青：MP/冰属性/弱点标记 */
+  --frost-bright:#93d1c9;
+  --font-display:'Noto Serif SC',serif;
+  --font-body:'Noto Sans SC',sans-serif;
+  --font-mono:'JetBrains Mono','Noto Sans SC',monospace;
+  --radius:3px;
+}
+
+*{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+html,body{
+  margin:0; padding:0; width:100%; height:100%; overflow:hidden;
+  background:var(--void); color:var(--bone); font-family:var(--font-body);
+  -webkit-user-select:none; user-select:none;
+}
+button{font-family:inherit; cursor:pointer;}
+::selection{background:var(--ember); color:var(--void);}
+
+/* ---------- 3D 画布层 ---------- */
+#canvas-layer{position:fixed; inset:0; z-index:0;}
+#canvas-layer canvas{display:block; width:100%; height:100%;}
+
+/* 画面暗角，增强氛围、让上层文字更易读 */
+#vignette{
+  position:fixed; inset:0; z-index:1; pointer-events:none;
+  background:radial-gradient(ellipse at center, transparent 45%, rgba(10,11,7,0.55) 100%);
+}
+
+/* ---------- 通用 journal 面板签名样式：黄铜铆钉 + 撕边纸感 ---------- */
+.journal-panel{
+  position:relative;
+  background:
+    repeating-linear-gradient(115deg, rgba(255,255,255,0.015) 0 2px, transparent 2px 6px),
+    linear-gradient(180deg, var(--iron), var(--iron-3));
+  border:1px solid var(--brass);
+  border-radius:var(--radius);
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.4), 0 14px 34px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.04);
+}
+.journal-panel::before, .journal-panel::after,
+.journal-panel .rivet{
+  content:''; position:absolute; width:6px; height:6px; border-radius:50%;
+  background:radial-gradient(circle at 35% 30%, var(--brass-bright), var(--brass) 60%, #6b4f28 100%);
+  box-shadow:0 1px 2px rgba(0,0,0,0.6);
+}
+.journal-panel::before{top:7px; left:7px;}
+.journal-panel::after{top:7px; right:7px;}
+.journal-panel .rivet.bl{bottom:7px; left:7px; top:auto; right:auto;}
+.journal-panel .rivet.br{bottom:7px; right:7px; top:auto; left:auto;}
+
+.eyebrow{
+  font-family:var(--font-mono); font-size:11px; letter-spacing:0.18em;
+  color:var(--brass-bright); text-transform:uppercase; font-weight:600;
+}
+.divider{height:1px; background:linear-gradient(90deg, transparent, var(--brass), transparent); opacity:0.5; margin:10px 0;}
+
+/* ---------- 屏幕切换系统 ---------- */
+.screen{
+  position:fixed; inset:0; z-index:10; display:none;
+  align-items:center; justify-content:center;
+  padding:24px;
+}
+.screen.active{display:flex; animation:fadeIn 0.35s ease;}
+@keyframes fadeIn{from{opacity:0; transform:scale(0.98);} to{opacity:1; transform:scale(1);}}
+
+/* ---------- 标题屏 ---------- */
+#screen-title{flex-direction:column; gap:0;}
+.title-panel{
+  width:min(480px, 92vw); padding:34px 30px 28px; text-align:center;
+}
+.game-logo{
+  font-family:var(--font-display); font-weight:900; font-size:clamp(30px,7vw,42px);
+  color:var(--bone); letter-spacing:0.06em; margin:6px 0 4px;
+  text-shadow:0 2px 18px rgba(227,123,60,0.35);
+}
+.game-logo .accent{color:var(--ember);}
+.game-tagline{
+  font-family:var(--font-mono); font-size:12px; color:var(--bone-dim);
+  letter-spacing:0.08em; margin-bottom:22px;
+}
+.btn-row{display:flex; flex-direction:column; gap:12px; margin-top:6px;}
+.btn{
+  font-family:var(--font-display); font-weight:700; font-size:16px;
+  padding:13px 20px; border-radius:var(--radius); border:1px solid var(--brass);
+  background:var(--iron-2); color:var(--bone); letter-spacing:0.04em;
+  transition:transform 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+  position:relative; overflow:hidden;
+}
+.btn:active{transform:scale(0.97);}
+.btn-primary{
+  background:linear-gradient(180deg, var(--ember), var(--ember-dim)); border-color:var(--ember);
+  color:#1b0f08; box-shadow:0 6px 18px rgba(227,123,60,0.35);
+}
+.btn-primary:hover{filter:brightness(1.08);}
+.btn-ghost{background:transparent; border-color:var(--brass); color:var(--bone-dim);}
+.btn-ghost:hover{color:var(--bone); border-color:var(--brass-bright);}
+.btn-small{padding:8px 14px; font-size:13px;}
+.btn:disabled{opacity:0.35; pointer-events:none;}
+
+.tech-footnote{
+  margin-top:20px; font-family:var(--font-mono); font-size:10px; color:var(--bone-faint);
+  line-height:1.7; letter-spacing:0.02em;
+}
+
+/* ---------- 指南弹层 ---------- */
+#screen-guide{z-index:40; background:rgba(10,11,7,0.72); backdrop-filter:blur(3px);}
+.guide-panel{
+  width:min(560px,92vw); max-height:82vh; display:flex; flex-direction:column;
+  padding:24px 24px 18px;
+}
+.guide-title{font-family:var(--font-display); font-weight:900; font-size:22px; margin:2px 0 2px;}
+.guide-scroll{overflow-y:auto; padding-right:6px; margin:12px 0; flex:1;}
+.guide-scroll::-webkit-scrollbar{width:5px;}
+.guide-scroll::-webkit-scrollbar-thumb{background:var(--brass); border-radius:3px;}
+.guide-item{display:flex; gap:12px; padding:11px 0; border-bottom:1px dashed rgba(176,138,78,0.25);}
+.guide-item:last-child{border-bottom:none;}
+.guide-icon{
+  flex:0 0 34px; height:34px; border-radius:50%; border:1px solid var(--brass);
+  display:flex; align-items:center; justify-content:center; font-size:16px; background:var(--iron-3);
+}
+.guide-item h4{margin:0 0 3px; font-family:var(--font-display); font-size:14.5px; color:var(--brass-bright); font-weight:700;}
+.guide-item p{margin:0; font-size:12.5px; color:var(--bone-dim); line-height:1.65;}
+.guide-item kbd{
+  font-family:var(--font-mono); background:var(--void-2); border:1px solid var(--brass); border-radius:3px;
+  padding:1px 6px; font-size:11px; color:var(--frost-bright); margin:0 2px;
+}
+.guide-foot{display:flex; align-items:center; justify-content:space-between; gap:10px; padding-top:10px; border-top:1px solid rgba(176,138,78,0.3);}
+.check-row{display:flex; align-items:center; gap:6px; font-size:11.5px; color:var(--bone-faint);}
+
+/* ---------- 场景枢纽 Hub ---------- */
+#screen-hub{align-items:flex-end;}
+.hub-wrap{width:100%; max-width:980px; margin:0 auto;}
+.hub-header{display:flex; justify-content:space-between; align-items:flex-end; padding:0 4px 12px;}
+.hub-header h2{font-family:var(--font-display); font-size:clamp(18px,3vw,24px); margin:0; color:var(--bone);}
+.hub-header .eyebrow{display:block; margin-bottom:4px;}
+.hero-mini{display:flex; align-items:center; gap:10px; font-family:var(--font-mono); font-size:12px; color:var(--bone-dim);}
+.hero-mini b{color:var(--brass-bright); font-family:var(--font-body);}
+.scene-cards{
+  display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; padding-bottom:4px;
+}
+.scene-card{
+  padding:14px 12px 12px; cursor:pointer; transition:transform 0.15s ease, border-color 0.15s ease;
+  display:flex; flex-direction:column; gap:6px; min-height:118px;
+}
+.scene-card:hover{transform:translateY(-3px); border-color:var(--brass-bright);}
+.scene-card.locked{opacity:0.4; filter:grayscale(0.6); pointer-events:none;}
+.scene-card .sc-name{font-family:var(--font-display); font-weight:700; font-size:16px;}
+.scene-card .sc-monster{font-size:11.5px; color:var(--bone-dim);}
+.scene-card .sc-lv{
+  font-family:var(--font-mono); font-size:10px; color:var(--frost-bright);
+  border:1px solid var(--frost); border-radius:20px; padding:2px 8px; width:fit-content; margin-top:auto;
+}
+.scene-card .sc-status{font-family:var(--font-mono); font-size:10px; color:var(--ember); letter-spacing:0.05em;}
+
+/* ---------- 探索 HUD ---------- */
+#hud-exploration{position:fixed; inset:0; z-index:8; pointer-events:none; display:none;}
+#hud-exploration.active{display:block;}
+.expl-top{
+  position:absolute; top:14px; left:14px; right:14px; display:flex; justify-content:space-between; align-items:flex-start; pointer-events:auto;
+}
+.scene-tag{padding:8px 14px; font-family:var(--font-display); font-weight:700; font-size:14px;}
+.icon-btn{
+  width:38px; height:38px; border-radius:50%; border:1px solid var(--brass); background:var(--iron);
+  color:var(--bone); font-size:16px; display:flex; align-items:center; justify-content:center;
+}
+.encounter-hint{
+  position:absolute; bottom:150px; left:50%; transform:translateX(-50%);
+  font-family:var(--font-mono); font-size:11px; color:var(--bone-dim); text-align:center;
+  padding:6px 14px; background:rgba(20,23,15,0.6); border-radius:20px; border:1px solid rgba(176,138,78,0.3);
+}
+.dpad{position:absolute; bottom:26px; left:26px; pointer-events:auto; display:grid; grid-template-columns:44px 44px 44px; grid-template-rows:44px 44px 44px; gap:4px;}
+.dpad button{
+  background:var(--iron); border:1px solid var(--brass); border-radius:6px; color:var(--bone); font-size:17px;
+  display:flex; align-items:center; justify-content:center; touch-action:none;
+}
+.dpad button:active{background:var(--iron-2); color:var(--ember);}
+#dpad-up{grid-column:2; grid-row:1;} #dpad-left{grid-column:1; grid-row:2;}
+#dpad-right{grid-column:3; grid-row:2;} #dpad-down{grid-column:2; grid-row:3;}
+.exit-btn{position:absolute; bottom:34px; right:26px; pointer-events:auto;}
+
+/* ---------- 遭遇战闪屏 ---------- */
+#encounter-flash{
+  position:fixed; inset:0; z-index:20; display:none; align-items:center; justify-content:center;
+  background:rgba(10,8,5,0); 
+}
+#encounter-flash.active{display:flex; animation:flashPulse 0.9s ease forwards;}
+@keyframes flashPulse{
+  0%{background:rgba(227,123,60,0);}
+  15%{background:rgba(227,123,60,0.85);}
+  100%{background:rgba(10,8,5,0);}
+}
+.encounter-word{font-family:var(--font-display); font-weight:900; font-size:clamp(32px,9vw,54px); color:var(--void); letter-spacing:0.1em; opacity:0; animation:wordPop 0.9s ease forwards;}
+@keyframes wordPop{0%{opacity:0; transform:scale(1.4);} 20%{opacity:1; transform:scale(1);} 75%{opacity:1;} 100%{opacity:0;}}
+
+/* ---------- 战斗 HUD ---------- */
+#hud-battle{position:fixed; inset:0; z-index:9; display:none; flex-direction:column; justify-content:space-between; pointer-events:none;}
+#hud-battle.active{display:flex;}
+/* 暗色覆盖层：保证暗色场景（如洞窟）中战斗 HUD 按钮仍可辨识与点击，
+   pointer-events:none 不拦截点击，仅起视觉衬托作用 */
+#hud-battle::before{
+  content:''; position:absolute; inset:0; z-index:-1;
+  background:linear-gradient(180deg, rgba(10,11,7,0.55) 0%, rgba(10,11,7,0.35) 25%, rgba(10,11,7,0.35) 65%, rgba(10,11,7,0.65) 100%);
+  pointer-events:none;
+}
+
+.turn-strip{
+  pointer-events:auto; align-self:center; margin-top:12px; display:flex; gap:6px; padding:6px 10px;
+}
+.turn-chip{
+  width:26px; height:26px; border-radius:50%; border:1px solid var(--brass); display:flex; align-items:center; justify-content:center;
+  font-size:13px; background:var(--iron-3); opacity:0.55;
+}
+.turn-chip.now{opacity:1; border-color:var(--ember); box-shadow:0 0 8px rgba(227,123,60,0.6);}
+
+.monster-card{
+  pointer-events:auto; position:absolute; top:12px; right:12px; width:min(230px,44vw); padding:10px 12px;
+}
+.monster-card .mc-name{font-family:var(--font-display); font-weight:700; font-size:14px; display:flex; justify-content:space-between; align-items:center;}
+.monster-card .mc-lv{font-family:var(--font-mono); font-size:10px; color:var(--bone-dim);}
+.bar-track{height:9px; border-radius:6px; background:var(--void-2); border:1px solid rgba(176,138,78,0.35); overflow:hidden; margin-top:5px; position:relative;}
+.bar-fill{height:100%; border-radius:6px; transition:none;}
+.bar-fill.hp{background:linear-gradient(90deg, var(--rust-bright), var(--rust));}
+.bar-fill.mp{background:linear-gradient(90deg, var(--frost-bright), var(--frost));}
+.bar-fill.break{background:linear-gradient(90deg, var(--brass-bright), var(--brass));}
+.bar-label{display:flex; justify-content:space-between; font-family:var(--font-mono); font-size:9.5px; color:var(--bone-faint); margin-top:2px;}
+.weakpoint-row{display:flex; gap:5px; margin-top:8px; flex-wrap:wrap;}
+.wp-tag{
+  font-family:var(--font-mono); font-size:9.5px; padding:2px 7px; border-radius:10px;
+  border:1px solid var(--frost); color:var(--frost-bright); background:rgba(111,175,168,0.08);
+}
+.wp-tag.broken{border-color:var(--ember); color:var(--ember); background:rgba(227,123,60,0.12);}
+
+.dmg-layer{position:absolute; inset:0; pointer-events:none;}
+.dmg-num{
+  position:absolute; font-family:var(--font-mono); font-weight:700; font-size:20px; color:var(--rust-bright);
+  text-shadow:0 2px 4px rgba(0,0,0,0.8); animation:dmgFloat 1s ease forwards;
+}
+.dmg-num.heal{color:var(--frost-bright);}
+.dmg-num.crit{color:var(--ember); font-size:26px;}
+.dmg-num.miss{color:var(--bone-dim); font-size:15px;}
+@keyframes dmgFloat{0%{transform:translateY(0); opacity:0;} 15%{opacity:1;} 100%{transform:translateY(-46px); opacity:0;}}
+
+.battle-bottom{pointer-events:auto; width:100%; padding:10px 10px 14px;}
+.battle-panel{width:min(720px,100%); margin:0 auto; padding:12px 14px 12px; display:flex; flex-direction:column; gap:8px;}
+.hero-status-row{display:flex; align-items:center; gap:12px;}
+.hero-name-tag{font-family:var(--font-display); font-weight:700; font-size:14px; flex:0 0 auto;}
+.hero-bars{flex:1; display:flex; flex-direction:column; gap:4px;}
+.log-scroll{
+  height:46px; overflow-y:auto; background:var(--iron-3); border:1px solid rgba(176,138,78,0.3); border-radius:3px;
+  padding:6px 9px; font-family:var(--font-mono); font-size:11px; color:var(--bone-dim); line-height:1.6;
+}
+.log-scroll::-webkit-scrollbar{width:4px;} .log-scroll::-webkit-scrollbar-thumb{background:var(--brass);}
+.log-scroll .new{color:var(--brass-bright);}
+
+.action-grid{display:grid; grid-template-columns:repeat(5,1fr); gap:6px;}
+.act-btn{
+  padding:10px 4px; border-radius:var(--radius); border:1px solid var(--brass); background:var(--iron-2);
+  color:var(--bone); font-family:var(--font-body); font-weight:700; font-size:12px; display:flex; flex-direction:column; align-items:center; gap:3px;
+}
+.act-btn .ic{font-size:16px;}
+.act-btn:active{background:var(--ember-dim); border-color:var(--ember);}
+.act-btn:disabled{opacity:0.3; pointer-events:none;}
+
+.sub-panel{
+  position:absolute; bottom:96px; left:50%; transform:translateX(-50%); width:min(420px,94vw);
+  padding:10px; display:none; flex-direction:column; gap:6px; pointer-events:auto; max-height:40vh; overflow-y:auto;
+}
+.sub-panel.active{display:flex;}
+.sub-item{
+  display:flex; justify-content:space-between; align-items:center; padding:9px 12px; border-radius:3px;
+  background:var(--iron-2); border:1px solid rgba(176,138,78,0.4); font-size:12.5px;
+}
+.sub-item:active{border-color:var(--ember);}
+.sub-item .si-desc{color:var(--bone-dim); font-size:11px; font-family:var(--font-mono);}
+.sub-item.target-body{border-color:var(--bone-dim);}
+.sub-item.target-weak{border-color:var(--frost);}
+.sub-item.target-weak .si-name{color:var(--frost-bright);}
+.sub-cancel{text-align:center; padding:6px; font-family:var(--font-mono); font-size:11px; color:var(--bone-faint);}
+
+/* ---------- 结算屏 ---------- */
+#screen-result{z-index:30;}
+.result-panel{width:min(420px,90vw); padding:30px 26px 24px; text-align:center;}
+.result-title{font-family:var(--font-display); font-weight:900; font-size:28px; margin:4px 0 2px;}
+.result-title.win{color:var(--brass-bright);}
+.result-title.lose{color:var(--rust-bright);}
+.reward-list{margin:16px 0; display:flex; flex-direction:column; gap:8px; text-align:left;}
+.reward-row{display:flex; justify-content:space-between; font-size:13px; padding:8px 10px; background:var(--iron-3); border-radius:3px; border:1px solid rgba(176,138,78,0.25);}
+.reward-row b{font-family:var(--font-mono); color:var(--brass-bright);}
+.levelup-tag{margin-top:6px; font-family:var(--font-mono); font-size:12px; color:var(--ember); border:1px solid var(--ember); border-radius:20px; padding:5px 12px; display:inline-block;}
+
+/* ---------- 加载遮罩 ---------- */
+#loading-veil{position:fixed; inset:0; z-index:100; background:var(--void); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px;}
+#loading-veil.hide{display:none;}
+.load-mark{font-family:var(--font-display); font-weight:900; font-size:22px; color:var(--brass-bright); letter-spacing:0.1em;}
+.load-bar{width:180px; height:3px; background:var(--iron); border-radius:2px; overflow:hidden;}
+.load-bar i{display:block; height:100%; width:30%; background:var(--ember); animation:loadSlide 1.1s ease-in-out infinite;}
+@keyframes loadSlide{0%{margin-left:-30%;} 100%{margin-left:100%;}}
+
+/* ---------- 响应式 ---------- */
+@media (max-width:520px){
+  .action-grid{grid-template-columns:repeat(5,1fr); gap:4px;}
+  .act-btn{font-size:10.5px; padding:8px 2px;}
+  .act-btn .ic{font-size:14px;}
+  .monster-card{width:42vw; padding:8px 9px;}
+  .dpad{transform:scale(0.9); transform-origin:bottom left;}
+}
+@media (prefers-reduced-motion: reduce){
+  *{animation-duration:0.01ms !important; transition-duration:0.01ms !important;}
+}
+</style>
+</head>
+<body>
+
+<div id="loading-veil">
+  <div class="load-mark">兽 猎 纪 元</div>
+  <div class="load-bar"><i></i></div>
+  <div class="eyebrow" id="load-text">正在构建世界…</div>
+</div>
+
+<div id="canvas-layer"></div>
+<div id="vignette"></div>
+
+<!-- ============ 标题屏 ============ -->
+<div class="screen active" id="screen-title">
+  <div class="title-panel journal-panel">
+    <div class="rivet bl"></div><div class="rivet br"></div>
+    <div class="eyebrow">THREE.JS · 自研物理引擎驱动 · 回合制RPG</div>
+    <div class="game-logo">兽 猎 <span class="accent">纪元</span></div>
+    <div class="game-tagline">ERA OF THE BEAST HUNTER — 追猎笔记 · 第一卷</div>
+    <div class="btn-row">
+      <button class="btn btn-primary" id="btn-start">开始狩猎</button>
+      <button class="btn btn-ghost" id="btn-guide-open">狩猎指南</button>
+    </div>
+    <div class="tech-footnote" id="tech-footnote">碰撞检测 · 粒子系统 · 规则引擎 · 微分方程求解器</div>
+  </div>
+</div>
+
+<!-- ============ 指南弹层 ============ -->
+<div class="screen" id="screen-guide">
+  <div class="guide-panel journal-panel">
+    <div class="rivet bl"></div><div class="rivet br"></div>
+    <div class="eyebrow">HUNTER'S FIELD NOTES</div>
+    <div class="guide-title">狩猎指南</div>
+    <div class="guide-scroll" id="guide-scroll"></div>
+    <div class="guide-foot">
+      <label class="check-row"><input type="checkbox" id="chk-noshow"> 下次不再自动弹出</label>
+      <button class="btn btn-primary btn-small" id="btn-guide-close">明白了</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 场景枢纽 ============ -->
+<div class="screen" id="screen-hub">
+  <div class="hub-wrap">
+    <div class="hub-header">
+      <div>
+        <span class="eyebrow">选择猎场 · SELECT HUNTING GROUND</span>
+        <h2>营地地图</h2>
+      </div>
+      <div class="hero-mini journal-panel" style="padding:8px 14px;">
+        <span>凯 · Lv<b id="hub-lv">1</b></span>
+        <span>HP <b id="hub-hp">120/120</b></span>
+        <span>MP <b id="hub-mp">40/40</b></span>
+        <button class="icon-btn" id="btn-guide-open-2" title="指南" style="width:28px;height:28px;font-size:13px;">?</button>
+      </div>
+    </div>
+    <div class="scene-cards" id="scene-cards"></div>
+  </div>
+</div>
+
+<!-- ============ 探索 HUD ============ -->
+<div id="hud-exploration">
+  <div class="expl-top">
+    <div class="scene-tag journal-panel" id="expl-scene-name">森林</div>
+    <div style="display:flex; gap:8px;">
+      <button class="icon-btn" id="btn-guide-open-3">?</button>
+    </div>
+  </div>
+  <div class="encounter-hint" id="encounter-hint">靠近猎物即可发起战斗 · 方向键 / 触摸方向盘移动</div>
+  <div class="dpad journal-panel" style="padding:6px;">
+    <button id="dpad-up">▲</button>
+    <button id="dpad-left">◀</button>
+    <button id="dpad-right">▶</button>
+    <button id="dpad-down">▼</button>
+  </div>
+  <button class="btn btn-ghost exit-btn" id="btn-exit-scene">返回营地</button>
+</div>
+
+<!-- ============ 遭遇战闪屏 ============ -->
+<div id="encounter-flash"><div class="encounter-word" id="encounter-word">遭 遇 ！</div></div>
+
+<!-- ============ 战斗 HUD ============ -->
+<div id="hud-battle">
+  <div class="turn-strip journal-panel" id="turn-strip"></div>
+
+  <div class="monster-card journal-panel" id="monster-card">
+    <div class="rivet bl"></div><div class="rivet br"></div>
+    <div class="mc-name"><span id="mon-name">怪物</span><span class="mc-lv" id="mon-lv">Lv.1</span></div>
+    <div class="bar-track"><div class="bar-fill hp" id="mon-hp-bar" style="width:100%"></div></div>
+    <div class="bar-label"><span>HP</span><span id="mon-hp-text">100/100</span></div>
+    <div class="bar-track" style="height:5px;"><div class="bar-fill break" id="mon-break-bar" style="width:0%"></div></div>
+    <div class="weakpoint-row" id="mon-weakpoints"></div>
+  </div>
+
+  <div class="dmg-layer" id="dmg-layer"></div>
+
+  <div class="sub-panel journal-panel" id="sub-panel">
+    <div class="rivet bl"></div><div class="rivet br"></div>
+    <div id="sub-panel-items"></div>
+    <div class="sub-cancel" id="sub-cancel">取消</div>
+  </div>
+
+  <div class="battle-bottom">
+    <div class="battle-panel journal-panel">
+      <div class="rivet bl"></div><div class="rivet br"></div>
+      <div class="hero-status-row">
+        <div class="hero-name-tag">凯</div>
+        <div class="hero-bars">
+          <div class="bar-track"><div class="bar-fill hp" id="hero-hp-bar" style="width:100%"></div></div>
+          <div class="bar-label"><span>HP <span id="hero-hp-text">120/120</span></span></div>
+          <div class="bar-track"><div class="bar-fill mp" id="hero-mp-bar" style="width:100%"></div></div>
+          <div class="bar-label"><span>MP <span id="hero-mp-text">40/40</span></span></div>
+        </div>
+      </div>
+      <div class="log-scroll" id="battle-log"></div>
+      <div class="action-grid" id="action-grid">
+        <button class="act-btn" id="act-attack"><span class="ic">⚔</span>攻击</button>
+        <button class="act-btn" id="act-skill"><span class="ic">✦</span>技能</button>
+        <button class="act-btn" id="act-item"><span class="ic">⚗</span>道具</button>
+        <button class="act-btn" id="act-defend"><span class="ic">◈</span>防御</button>
+        <button class="act-btn" id="act-flee"><span class="ic">➤</span>撤退</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 结算屏 ============ -->
+<div class="screen" id="screen-result">
+  <div class="result-panel journal-panel">
+    <div class="rivet bl"></div><div class="rivet br"></div>
+    <div class="eyebrow" id="result-eyebrow">HUNT REPORT</div>
+    <div class="result-title win" id="result-title">狩猎成功</div>
+    <div class="reward-list" id="reward-list"></div>
+    <div class="btn-row">
+      <button class="btn btn-primary" id="btn-result-continue">返回营地</button>
+      <button class="btn btn-ghost" id="btn-result-retry" style="display:none;">再次挑战</button>
+    </div>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.184.0/build/three.module.js"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+
+// ===== [MODULE:PHYSICS] =====
+/* ================================================================
+ * 自研物理引擎 PhysicsEngine
+ * 完全独立于 three.js 的数值内核，仅在渲染边界转换为 THREE.Vector3。
+ * 子系统：
+ *   1) Vec3          —— 向量数学基础
+ *   2) Collision      —— 碰撞检测（AABB / 球体 / 射线）
+ *   3) ODE            —— 微分方程数值求解器（显式欧拉/半隐式欧拉/RK4）
+ *   4) Spring / Spring3 —— 建立在 ODE 之上的阻尼弹簧（相机跟随、UI动效、飘字）
+ *   5) ParticleSystem —— 基于 ODE 积分的粒子发射器
+ *   6) RuleEngine     —— 事件驱动规则引擎（状态效果/AI决策/连锁判定）
+ * ================================================================ */
+const PhysicsEngine = (() => {
+
+  // ---------- 1) Vec3：轻量向量数学 ----------
+  class Vec3 {
+    constructor(x = 0, y = 0, z = 0) { this.x = x; this.y = y; this.z = z; }
+    clone() { return new Vec3(this.x, this.y, this.z); }
+    set(x, y, z) { this.x = x; this.y = y; this.z = z; return this; }
+    add(v) { return new Vec3(this.x + v.x, this.y + v.y, this.z + v.z); }
+    sub(v) { return new Vec3(this.x - v.x, this.y - v.y, this.z - v.z); }
+    scale(s) { return new Vec3(this.x * s, this.y * s, this.z * s); }
+    addInPlace(v) { this.x += v.x; this.y += v.y; this.z += v.z; return this; }
+    length() { return Math.sqrt(this.x * this.x + this.y * this.y + this.z * this.z); }
+    lengthSq() { return this.x * this.x + this.y * this.y + this.z * this.z; }
+    normalize() {
+      const l = this.length();
+      if (l < 1e-8) return new Vec3();
+      return new Vec3(this.x / l, this.y / l, this.z / l);
+    }
+    dot(v) { return this.x * v.x + this.y * v.y + this.z * v.z; }
+    static lerp(a, b, t) { return new Vec3(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t); }
+    static distance(a, b) { return a.sub(b).length(); }
+    toThree() { return new THREE.Vector3(this.x, this.y, this.z); }
+  }
+
+  // ---------- 2) Collision：AABB / 球体 / 射线检测 ----------
+  const Collision = {
+    // 轴对齐包围盒 vs 包围盒
+    aabbAabb(a, b) {
+      return (a.min.x <= b.max.x && a.max.x >= b.min.x) &&
+             (a.min.y <= b.max.y && a.max.y >= b.min.y) &&
+             (a.min.z <= b.max.z && a.max.z >= b.min.z);
+    },
+    // 点是否在 AABB 内
+    pointInAabb(p, box) {
+      return p.x >= box.min.x && p.x <= box.max.x &&
+             p.z >= box.min.z && p.z <= box.max.z;
+    },
+    // 球体 vs 球体（用于遭遇触发、命中判定）
+    sphereSphere(pa, ra, pb, rb) {
+      const d2 = pa.sub(pb).lengthSq();
+      const r = ra + rb;
+      return d2 <= r * r;
+    },
+    distanceXZ(a, b) {
+      const dx = a.x - b.x, dz = a.z - b.z;
+      return Math.sqrt(dx * dx + dz * dz);
+    },
+    // 射线 vs 球体（用于弩炮弹道命中判定）
+    raySphere(origin, dir, center, r) {
+      const oc = origin.sub(center);
+      const a = dir.dot(dir) || 1e-6;
+      const b = 2 * oc.dot(dir);
+      const c = oc.dot(oc) - r * r;
+      const disc = b * b - 4 * a * c;
+      if (disc < 0) return null;
+      const t = (-b - Math.sqrt(disc)) / (2 * a);
+      return t >= 0 ? t : null;
+    },
+    // 圆形边界约束（限制探索区域，返回修正后的位置）
+    clampToRadius(p, center, radius) {
+      const d = Collision.distanceXZ(p, center);
+      if (d <= radius) return p;
+      const k = radius / d;
+      return new Vec3(center.x + (p.x - center.x) * k, p.y, center.z + (p.z - center.z) * k);
+    }
+  };
+
+  // ---------- 3) ODE：微分方程数值求解器 ----------
+  // 统一求解形如 y' = f(t, y) 的常微分方程，供粒子运动/弹道/弹簧阻尼复用
+  const ODE = {
+    // 显式欧拉：最简单，误差随步长线性增长，仅用于对精度要求低的场合
+    euler(y, dydt, dt) { return y.add(dydt.scale(dt)); },
+
+    // 半隐式（辛）欧拉：sympletic，长期能量表现优于显式欧拉，是本引擎中
+    // 粒子与弹道运动的默认积分方式：先更新速度，再用新速度更新位置
+    semiImplicitEuler(pos, vel, accelFn, dt) {
+      const a = accelFn(pos, vel);
+      const newVel = vel.add(a.scale(dt));
+      const newPos = pos.add(newVel.scale(dt));
+      return { pos: newPos, vel: newVel };
+    },
+
+    // 经典四阶龙格库塔（RK4）：用于对精度敏感的抛体轨迹预测（弩炮瞄准线）
+    rk4Vec(y0, derivFn, dt) {
+      const k1 = derivFn(y0);
+      const k2 = derivFn(y0.add(k1.scale(dt / 2)));
+      const k3 = derivFn(y0.add(k2.scale(dt / 2)));
+      const k4 = derivFn(y0.add(k3.scale(dt)));
+      return y0.add(k1.add(k2.scale(2)).add(k3.scale(2)).add(k4).scale(dt / 6));
+    },
+
+    // 标量阻尼振荡（用于数值一维量，如相机视场角）
+    dampedScalar(value, velocity, target, k, c, dt) {
+      const accel = (-k * (value - target) - c * velocity);
+      const newVel = velocity + accel * dt;
+      const newVal = value + newVel * dt;
+      return { value: newVal, velocity: newVel };
+    }
+  };
+
+  // ---------- 4) Spring：建立在 ODE 阻尼振荡之上的弹簧系统 ----------
+  // x'' = (-k(x - target) - c·x') / m ，逐帧用半隐式欧拉积分
+  class Spring {
+    constructor({ stiffness = 120, damping = 14, mass = 1 } = {}) {
+      this.k = stiffness; this.c = damping; this.m = mass;
+      this.value = 0; this.velocity = 0; this.target = 0;
+    }
+    snap(v) { this.value = this.target = v; this.velocity = 0; }
+    update(dt) {
+      const accel = (-this.k * (this.value - this.target) - this.c * this.velocity) / this.m;
+      this.velocity += accel * dt;
+      this.value += this.velocity * dt;
+      return this.value;
+    }
+  }
+  class Spring3 {
+    constructor(opts) { this.sx = new Spring(opts); this.sy = new Spring(opts); this.sz = new Spring(opts); }
+    setTarget(v) { this.sx.target = v.x; this.sy.target = v.y; this.sz.target = v.z; }
+    snap(v) { this.sx.snap(v.x); this.sy.snap(v.y); this.sz.snap(v.z); }
+    update(dt) { return new Vec3(this.sx.update(dt), this.sy.update(dt), this.sz.update(dt)); }
+  }
+
+  // ---------- 5) ParticleSystem：基于 ODE 积分的粒子发射器 ----------
+  class Particle {
+    constructor() { this.reset(); }
+    reset() {
+      this.pos = new Vec3(); this.vel = new Vec3(); this.acc = new Vec3();
+      this.life = 0; this.maxLife = 1; this.size = 1; this.startSize = 1;
+      this.color = { r: 1, g: 1, b: 1 }; this.drag = 0; this.active = false;
+    }
+  }
+  class ParticleEmitter {
+    constructor(opts = {}) {
+      this.pos = opts.pos || new Vec3();
+      this.rate = opts.rate ?? 0;
+      this.speed = opts.speed ?? [1, 3];
+      this.gravity = opts.gravity ?? new Vec3(0, -9.8, 0);
+      this.life = opts.life ?? [0.5, 1.2];
+      this.size = opts.size ?? [0.05, 0.15];
+      this.color = opts.color ?? { r: 1, g: 1, b: 1 };
+      this.spread = opts.spread ?? 1.0;
+      this.direction = opts.direction || new Vec3(0, 1, 0);
+      this.drag = opts.drag ?? 0.1;
+      this.maxParticles = opts.maxParticles ?? 200;
+      this.loop = opts.loop !== false;
+      this.pool = [];
+      this._acc = 0;
+      for (let i = 0; i < this.maxParticles; i++) this.pool.push(new Particle());
+    }
+    _rand(range) { return range[0] + Math.random() * (range[1] - range[0]); }
+    _free() { return this.pool.find(p => !p.active); }
+    emit(count) {
+      for (let i = 0; i < count; i++) {
+        const p = this._free();
+        if (!p) return;
+        p.active = true;
+        p.pos = this.pos.clone();
+        const dir = this.direction.clone().normalize();
+        const jitter = new Vec3((Math.random() - 0.5) * this.spread, (Math.random() - 0.5) * this.spread, (Math.random() - 0.5) * this.spread);
+        p.vel = dir.add(jitter).normalize().scale(this._rand(this.speed));
+        p.acc = this.gravity.clone();
+        p.life = 0; p.maxLife = this._rand(this.life);
+        p.startSize = this._rand(this.size); p.size = p.startSize;
+        p.drag = this.drag;
+        p.color = this.color;
+      }
+    }
+    update(dt) {
+      if (this.loop && this.rate > 0) {
+        this._acc += dt * this.rate;
+        while (this._acc >= 1) { this.emit(1); this._acc -= 1; }
+      }
+      for (const p of this.pool) {
+        if (!p.active) continue;
+        // 用引擎的半隐式欧拉积分器推进粒子运动（受重力与阻力）
+        const res = ODE.semiImplicitEuler(p.pos, p.vel, (pos, vel) => p.acc.sub(vel.scale(p.drag)), dt);
+        p.pos = res.pos; p.vel = res.vel;
+        p.life += dt;
+        const lifeT = p.life / p.maxLife;
+        p.size = p.startSize * (1 - lifeT * 0.6);
+        if (p.life >= p.maxLife) p.active = false;
+      }
+    }
+    activeParticles() { return this.pool.filter(p => p.active); }
+    setPosition(v) { this.pos = v; }
+  }
+
+  // ---------- 6) RuleEngine：事件驱动规则引擎 ----------
+  // 用声明式规则取代散落各处的 if/else：状态效果结算、弱点破防、怪物AI决策等
+  // 均通过 register(rule) 挂载，由 fire(event, ctx) 统一触发评估。
+  class RuleEngine {
+    constructor() { this.rules = []; }
+    register(rule) { this.rules.push(rule); return rule; }
+    unregister(name) { this.rules = this.rules.filter(r => r.name !== name); }
+    clear() { this.rules = []; }
+    // 触发某个事件，依次评估所有挂载于该事件的规则；condition 通过则执行 effect
+    fire(eventName, ctx) {
+      const triggered = [];
+      for (const rule of this.rules) {
+        if (rule.event !== eventName) continue;
+        if (!rule.condition || rule.condition(ctx)) {
+          rule.effect(ctx);
+          triggered.push(rule.name);
+        }
+      }
+      return triggered;
+    }
+  }
+
+  return { Vec3, Collision, ODE, Spring, Spring3, Particle, ParticleEmitter, RuleEngine };
+})();
+// ===== [/MODULE:PHYSICS] =====
+
+// ===== [MODULE:DATA] =====
+/* ================================================================
+ * 游戏数据 GameData —— 数据驱动：英雄/技能/道具/怪物/场景
+ * ================================================================ */
+const GameData = (() => {
+
+  const HERO_BASE = {
+    name: '凯', title: '兽猎人',
+    level: 1, exp: 0,
+    hp: 120, maxHp: 120, mp: 40, maxMp: 40,
+    atk: 20, def: 10, spd: 12,
+    growth: { hp: 18, mp: 6, atk: 3, def: 2, spd: 1 },
+    expTable: [0, 60, 150, 280, 460, 700, 1000, 1400, 1900, 2500, 3200],
+    items: { hpPotion: 3, mpPotion: 2 },
+  };
+
+  const SKILLS = {
+    attack:  { id: 'attack', name: '普通攻击', mp: 0, power: 1.0, kind: 'physical', canTargetWeak: true, desc: '大剑挥砍，MP消耗为0' },
+    whirl:   { id: 'whirl', name: '旋风斩', mp: 8, power: 1.6, kind: 'physical', canTargetWeak: false, desc: '横扫全身，稳定输出' },
+    crossbow:{ id: 'crossbow', name: '弩炮连击', mp: 10, power: 1.3, kind: 'ranged', canTargetWeak: true, projectile: true, desc: '远程点射，弱点命中率更高' },
+    wrath:   { id: 'wrath', name: '猎人之怒', mp: 20, power: 2.4, kind: 'physical', canTargetWeak: false, minLevel: 3, desc: '大剑蓄力终结技，破防怪物伤害加成' },
+  };
+
+  const ITEMS = {
+    hpPotion: { id: 'hpPotion', name: '治疗药膏', kind: 'heal_hp', value: 45, desc: '恢复45点HP' },
+    mpPotion: { id: 'mpPotion', name: '秘蓝药水', kind: 'heal_mp', value: 22, desc: '恢复22点MP' },
+  };
+
+  // 五大猎场：每个场景包含地形配色、雾效、氛围粒子、可放置的道具生成器标记
+  const SCENES = [
+    {
+      id: 'forest', name: '苍林边境', order: 1, recommendLv: 1,
+      ground: 0x33422a, ground2: 0x445a30, fog: 0x1c2415, fogNear: 8, fogDensity: 0.045,
+      sky: 0x2a3520, ambient: 0x7d8f5a, ambientI: 0.55, sun: 0xffd9a0, sunI: 1.1,
+      propKind: 'tree', propCount: 16,
+      particle: { color: { r: 1, g: 0.92, b: 0.55 }, rate: 6, speed: [0.3, 0.7], gravity: new PhysicsEngine.Vec3(0, 0.25, 0), spread: 1.6, life: [2, 4], size: [0.04, 0.09], drag: 0.05, glow: true },
+      monster: 'wolf',
+    },
+    {
+      id: 'cave', name: '幽暝洞窟', order: 2, recommendLv: 3,
+      ground: 0x2b2a30, ground2: 0x38363f, fog: 0x0e0d12, fogNear: 8, fogDensity: 0.045,
+      sky: 0x1a1c28, ambient: 0x7a88b8, ambientI: 0.75, sun: 0x9fb0ff, sunI: 1.0,
+      propKind: 'rock', propCount: 14,
+      particle: { color: { r: 0.6, g: 0.65, b: 0.8 }, rate: 3, speed: [0.1, 0.3], gravity: new PhysicsEngine.Vec3(0, -0.15, 0), spread: 1.2, life: [3, 5], size: [0.03, 0.06], drag: 0.02, glow: true },
+      monster: 'tortoise',
+    },
+    {
+      id: 'tundra', name: '霜雪冰原', order: 3, recommendLv: 5,
+      ground: 0xcdd8e0, ground2: 0xa9bdc9, fog: 0x8fa4b0, fogNear: 10, fogDensity: 0.04,
+      sky: 0x9fb8c4, ambient: 0xdfeaf2, ambientI: 0.9, sun: 0xffffff, sunI: 1.3,
+      propKind: 'ice', propCount: 12,
+      particle: { color: { r: 1, g: 1, b: 1 }, rate: 10, speed: [0.4, 0.9], gravity: new PhysicsEngine.Vec3(0, -0.6, 0), spread: 1.8, life: [2, 3.5], size: [0.04, 0.08], drag: 0.01, glow: false },
+      monster: 'bear',
+    },
+    {
+      id: 'volcano', name: '熔焰火山', order: 4, recommendLv: 7,
+      ground: 0x2e1712, ground2: 0x40201a, fog: 0x1a0d09, fogNear: 7, fogDensity: 0.05,
+      sky: 0x230f0a, ambient: 0xff8a4a, ambientI: 0.5, sun: 0xff5a2a, sunI: 1.4,
+      propKind: 'ember-rock', propCount: 13,
+      particle: { color: { r: 1, g: 0.5, b: 0.15 }, rate: 12, speed: [0.5, 1.3], gravity: new PhysicsEngine.Vec3(0, 0.7, 0), spread: 1.4, life: [1.5, 2.8], size: [0.05, 0.1], drag: 0.03, glow: true },
+      monster: 'wyvern',
+    },
+    {
+      id: 'ruins', name: '亡族遗迹', order: 5, recommendLv: 10,
+      ground: 0x3a3628, ground2: 0x4a4634, fog: 0x1c1a12, fogNear: 9, fogDensity: 0.05,
+      sky: 0x201e15, ambient: 0xc9b878, ambientI: 0.5, sun: 0xffe9b0, sunI: 1.0,
+      propKind: 'pillar', propCount: 10,
+      particle: { color: { r: 0.85, g: 0.78, b: 0.55 }, rate: 4, speed: [0.1, 0.35], gravity: new PhysicsEngine.Vec3(0, 0.05, 0), spread: 1.5, life: [3, 5], size: [0.03, 0.07], drag: 0.06, glow: false },
+      monster: 'dragon', boss: true,
+    },
+  ];
+
+  // 五种原创怪物：均含弱点部位、抗性、AI基础参数
+  const MONSTERS = {
+    wolf: {
+      id: 'wolf', name: '荒林狼王', level: 2, hp: 90, maxHp: 90, atk: 14, def: 5, spd: 14,
+      element: null, color: 0x5a4a3c, accent: 0x9c8264,
+      weakpoints: [{ id: 'head', name: '头部', mult: 1.6 }],
+      exp: 45, drop: '狼王的獠牙', statBoost: { atk: 2 },
+      skills: [
+        { name: '撕咬', power: 1.0, chance: 0.7 },
+        { name: '狂暴冲撞', power: 1.4, chance: 0.3, status: null },
+      ],
+      body: { type: 'quad', bodyLen: 1.1, bodyRad: 0.32, legLen: 0.5, headSize: 0.32, hasEars: true, hasTail: true, hasWings: false, hasShell: false }
+    },
+    tortoise: {
+      id: 'tortoise', name: '岩甲龟', level: 4, hp: 170, maxHp: 170, atk: 12, def: 17, spd: 6,
+      element: null, color: 0x4a5238, accent: 0x7c8a5a,
+      weakpoints: [{ id: 'shell', name: '龟壳裂纹', mult: 1.8, breaksDef: true }],
+      exp: 70, drop: '龟甲碎片', statBoost: { def: 2 },
+      skills: [
+        { name: '重压', power: 0.9, chance: 0.6 },
+        { name: '缩壳防御', power: 0, chance: 0.4, selfBuff: 'def' },
+      ],
+      body: { type: 'quad', bodyLen: 0.85, bodyRad: 0.5, legLen: 0.25, headSize: 0.24, hasEars: false, hasTail: false, hasWings: false, hasShell: true }
+    },
+    bear: {
+      id: 'bear', name: '霜爪熊', level: 6, hp: 150, maxHp: 150, atk: 20, def: 10, spd: 9,
+      element: 'ice', color: 0xaebfc9, accent: 0xeaf3f6,
+      weakpoints: [{ id: 'paw', name: '前掌', mult: 1.6 }],
+      exp: 95, drop: '霜爪熊皮', statBoost: { hp: 12 },
+      skills: [
+        { name: '冰爪连击', power: 1.1, chance: 0.6 },
+        { name: '冰霜咆哮', power: 0.8, chance: 0.4, status: 'freeze' },
+      ],
+      body: { type: 'quad', bodyLen: 1.0, bodyRad: 0.42, legLen: 0.42, headSize: 0.34, hasEars: true, hasTail: false, hasWings: false, hasShell: false }
+    },
+    wyvern: {
+      id: 'wyvern', name: '熔岩飞龙', level: 8, hp: 190, maxHp: 190, atk: 24, def: 12, spd: 13,
+      element: 'fire', color: 0x6b2418, accent: 0xff7a3a,
+      weakpoints: [{ id: 'wing', name: '龙翼', mult: 1.7 }],
+      exp: 130, drop: '飞龙鳞片', statBoost: { atk: 3 },
+      skills: [
+        { name: '尾刃横扫', power: 1.2, chance: 0.55 },
+        { name: '熔岩吐息', power: 1.0, chance: 0.45, status: 'burn' },
+      ],
+      body: { type: 'quad', bodyLen: 1.2, bodyRad: 0.34, legLen: 0.4, headSize: 0.3, hasEars: false, hasTail: true, hasWings: true, hasShell: false }
+    },
+    dragon: {
+      id: 'dragon', name: '遗迹古龙', level: 12, hp: 340, maxHp: 340, atk: 26, def: 15, spd: 11, boss: true,
+      element: 'mixed', color: 0x362c1a, accent: 0xd4b45a,
+      weakpoints: [{ id: 'head', name: '头部', mult: 1.5 }, { id: 'wing', name: '双翼', mult: 1.6 }, { id: 'tail', name: '尾部', mult: 1.7 }],
+      exp: 260, drop: '古龙之心', statBoost: { hp: 20, atk: 3, def: 2 },
+      skills: [
+        { name: '古龙爪击', power: 1.1, chance: 0.5 },
+        { name: '遗迹震波', power: 1.3, chance: 0.3, status: 'burn' },
+        { name: '觉醒怒吼', power: 1.9, chance: 0.2, enrageOnly: true },
+      ],
+      body: { type: 'quad', bodyLen: 1.5, bodyRad: 0.44, legLen: 0.5, headSize: 0.4, hasEars: false, hasTail: true, hasWings: true, hasShell: false }
+    },
+  };
+
+  const STATUS_INFO = {
+    poison: { name: '中毒', icon: '☠', dmgPct: 0.05 },
+    burn:   { name: '灼烧', icon: '🔥', dmgPct: 0.07 },
+    freeze: { name: '冰冻', icon: '❄', skipChance: 0.4 },
+    defBreak:{ name: '破防', icon: '⚡', dmgMult: 1.3 },
+  };
+
+  function cloneHero() { return JSON.parse(JSON.stringify(HERO_BASE)); }
+  function freshMonster(id) { return JSON.parse(JSON.stringify(MONSTERS[id])); }
+
+  return { HERO_BASE, SKILLS, ITEMS, SCENES, MONSTERS, STATUS_INFO, cloneHero, freshMonster };
+})();
+// ===== [/MODULE:DATA] =====
+
+// ===== [MODULE:RENDER] =====
+/* ================================================================
+ * 渲染引擎 RenderEngine —— three.js 表现层
+ * 所有几何体均为程序化生成（无外部模型资源）；物理运算完全委托给 PhysicsEngine，
+ * 本模块只负责「把物理状态画出来」。
+ * ================================================================ */
+const RenderEngine = (() => {
+  const { Vec3, ODE, Spring3, Collision, ParticleEmitter } = PhysicsEngine;
+
+  let renderer, scene, camera, camSpring, camLook = new Vec3(0, 1.2, 0);
+  let camMode = 'explore';
+  let shakeT = 0, shakeMag = 0;
+  const world = { ground: null, props: [], particleVisuals: [], monster: null, projectiles: [], fx: [], flashes: [], amb: null, sun: null };
+  const heroViz = { group: null, parts: {}, cape: null, pos: new Vec3(0, 0, 3.4), facing: Math.PI, walkT: 0, prevFacing: Math.PI };
+  let camYawExternal = 0; // 相机水平朝向（世界弧度），由鼠标/触摸拖拽驱动
+  function setCamYaw(y) { camYawExternal = y; }
+
+  // ---------- 值噪声（自实现，无第三方依赖）：驱动地形起伏 ----------
+  function hash2(x, z) { const s = Math.sin(x * 127.1 + z * 311.7) * 43758.5453; return s - Math.floor(s); }
+  function valueNoise(x, z) {
+    const xi = Math.floor(x), zi = Math.floor(z), xf = x - xi, zf = z - zi;
+    const h00 = hash2(xi, zi), h10 = hash2(xi + 1, zi), h01 = hash2(xi, zi + 1), h11 = hash2(xi + 1, zi + 1);
+    const u = xf * xf * (3 - 2 * xf), v = zf * zf * (3 - 2 * zf);
+    const nx0 = h00 + (h10 - h00) * u, nx1 = h01 + (h11 - h01) * u;
+    return nx0 + (nx1 - nx0) * v;
+  }
+  function terrainHeight(x, z) { return (valueNoise(x * 0.14, z * 0.14) - 0.5) * 0.3; }
+  const EXPLORE_RADIUS = 8.2;
+
+  function matStd(color, opts = {}) { return new THREE.MeshStandardMaterial(Object.assign({ color, flatShading: true, roughness: 0.8, metalness: 0.06 }, opts)); }
+  function lerpAngle(a, b, t) { let d = ((b - a + Math.PI) % (Math.PI * 2)) - Math.PI; return a + d * t; }
+
+  // ---------- 粒子可视化桥接：PhysicsEngine.ParticleEmitter -> THREE.Points ----------
+  class ParticleVisual {
+    constructor(opts) {
+      this.emitter = new ParticleEmitter(opts);
+      const n = this.emitter.maxParticles;
+      this.geometry = new THREE.BufferGeometry();
+      this.positions = new Float32Array(n * 3);
+      this.geometry.setAttribute('position', new THREE.BufferAttribute(this.positions, 3));
+      const c = opts.color || { r: 1, g: 1, b: 1 };
+      this.material = new THREE.PointsMaterial({
+        color: new THREE.Color(c.r, c.g, c.b), size: opts.pointSize || 0.14,
+        transparent: true, opacity: 0.9, depthWrite: false, sizeAttenuation: true,
+        blending: opts.glow ? THREE.AdditiveBlending : THREE.NormalBlending,
+      });
+      this.points = new THREE.Points(this.geometry, this.material);
+      scene.add(this.points);
+    }
+    setPosition(v) { this.emitter.setPosition(v); }
+    burst(n) { this.emitter.emit(n); }
+    update(dt) {
+      this.emitter.update(dt);
+      const arr = this.positions;
+      let i = 0;
+      for (const p of this.emitter.pool) {
+        if (p.active) { arr[i * 3] = p.pos.x; arr[i * 3 + 1] = p.pos.y; arr[i * 3 + 2] = p.pos.z; }
+        else { arr[i * 3 + 1] = -9999; }
+        i++;
+      }
+      this.geometry.attributes.position.needsUpdate = true;
+    }
+    dispose() { scene.remove(this.points); this.geometry.dispose(); this.material.dispose(); }
+  }
+
+  // ---------- 初始化 ----------
+  function init(container) {
+    scene = new THREE.Scene();
+    camera = new THREE.PerspectiveCamera(52, window.innerWidth / window.innerHeight, 0.1, 100);
+    renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.05;
+    container.appendChild(renderer.domElement);
+
+    camSpring = new Spring3({ stiffness: 55, damping: 15 });
+    world.amb = new THREE.AmbientLight(0xffffff, 0.6); scene.add(world.amb);
+    world.sun = new THREE.DirectionalLight(0xffffff, 1.0); world.sun.position.set(5, 8, 4); scene.add(world.sun);
+
+    buildHero();
+    const initDesired = exploreCamDesired();
+    camSpring.snap(initDesired.pos); camLook = initDesired.look;
+    camera.position.set(initDesired.pos.x, initDesired.pos.y, initDesired.pos.z);
+    camera.lookAt(camLook.x, camLook.y, camLook.z);
+
+    window.addEventListener('resize', onResize);
+  }
+  function onResize() {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  }
+
+  // ---------- 英雄模型（程序化拼装：躯干/四肢/大剑/弩炮/披风弹簧链）----------
+  function buildHero() {
+    const g = new THREE.Group();
+    const legMat = matStd(0x2c2418), torsoMat = matStd(0x4a3626), headMat = matStd(0xd8b58e);
+    const swordMat = matStd(0xaeb4bd, { roughness: 0.35, metalness: 0.6 });
+    const capeMat = matStd(0x7a2620, { side: THREE.DoubleSide, roughness: 0.9 });
+
+    const torso = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.56, 0.28), torsoMat);
+    torso.position.y = 0.98; g.add(torso);
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, 0.3), headMat);
+    head.position.y = 1.42; g.add(head);
+    const helm = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.1, 0.32), matStd(0x555a5f, { roughness: 0.4, metalness: 0.5 }));
+    helm.position.y = 1.57; g.add(helm);
+
+    const legL = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.075, 0.62, 6), legMat);
+    legL.position.set(-0.13, 0.31, 0); g.add(legL);
+    const legR = legL.clone(); legR.position.x = 0.13; g.add(legR);
+
+    const armL = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.065, 0.48, 6), torsoMat);
+    armL.position.set(-0.31, 1.0, 0); armL.rotation.z = 0.15; g.add(armL);
+    const armR = armL.clone(); armR.position.x = 0.31; armR.rotation.z = -0.15; g.add(armR);
+
+    const sword = new THREE.Group();
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.85, 0.03), swordMat); blade.position.y = 0.55; sword.add(blade);
+    const guard = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.06, 0.05), matStd(0x8a6a2e, { roughness: 0.4, metalness: 0.6 })); guard.position.y = 0.1; sword.add(guard);
+    const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.22, 6), matStd(0x2a1e12)); grip.position.y = -0.05; sword.add(grip);
+    sword.position.set(0, 1.15, -0.2); sword.rotation.set(0.35, 0, 0.15);
+    g.add(sword);
+
+    const crossbow = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.08, 0.06), matStd(0x3a2e1c));
+    crossbow.position.set(0.3, 0.78, 0.12); crossbow.rotation.y = 0.4;
+    g.add(crossbow);
+
+    // 披风锚点：hero 的子节点，仅需解算「相对朝向的滞后摆动」，避免世界/局部坐标换算
+    const capeAnchor = new THREE.Group(); capeAnchor.position.set(0, 1.12, 0.15); g.add(capeAnchor);
+    const capeSegs = [], capeSprings = [];
+    for (let i = 0; i < 3; i++) {
+      const seg = new THREE.Mesh(new THREE.PlaneGeometry(0.38 - i * 0.05, 0.26), capeMat);
+      seg.position.set(0, -0.15 * (i + 1), 0.05 * i);
+      capeAnchor.add(seg); capeSegs.push(seg);
+      capeSprings.push(new PhysicsEngine.Spring3({ stiffness: 42, damping: 6.5 }));
+    }
+
+    g.position.set(heroViz.pos.x, heroViz.pos.y, heroViz.pos.z);
+    g.rotation.y = heroViz.facing;
+    scene.add(g);
+    heroViz.group = g;
+    heroViz.parts = { torso, head, legL, legR, armL, armR, sword, crossbow };
+    heroViz.cape = { segs: capeSegs, springs: capeSprings };
+  }
+
+  function updateHero(dt, moveDir, moving) {
+    if (moving) {
+      heroViz.pos = Collision.clampToRadius(heroViz.pos.add(moveDir.scale(3.0 * dt)), new Vec3(0, 0, 0), EXPLORE_RADIUS);
+      heroViz.facing = Math.atan2(moveDir.x, moveDir.z);
+    }
+    heroViz.pos.y = terrainHeight(heroViz.pos.x, heroViz.pos.z);
+    heroViz.group.position.set(heroViz.pos.x, heroViz.pos.y, heroViz.pos.z);
+    heroViz.group.rotation.y = lerpAngle(heroViz.group.rotation.y, heroViz.facing, 0.2);
+
+    heroViz.walkT += dt * (moving ? 7.2 : 0.6);
+    const swing = moving ? 0.5 : 0;
+    heroViz.parts.legL.rotation.x = Math.sin(heroViz.walkT) * swing;
+    heroViz.parts.legR.rotation.x = Math.sin(heroViz.walkT + Math.PI) * swing;
+    heroViz.parts.armL.rotation.x = Math.sin(heroViz.walkT + Math.PI) * swing * 0.7;
+    heroViz.parts.armR.rotation.x = Math.sin(heroViz.walkT) * swing * 0.7;
+    heroViz.parts.torso.position.y = 0.98 + (moving ? Math.abs(Math.sin(heroViz.walkT)) * 0.03 : 0);
+
+    // 披风：转向角速度驱动弹簧目标，制造甩动滞后
+    const turnDelta = ((heroViz.group.rotation.y - heroViz.prevFacing + Math.PI) % (Math.PI * 2)) - Math.PI;
+    heroViz.prevFacing = heroViz.group.rotation.y;
+    const windSway = Math.sin(heroViz.walkT * 0.5) * (moving ? 0.06 : 0.03);
+    for (let i = 0; i < heroViz.cape.segs.length; i++) {
+      const k = (i + 1);
+      heroViz.cape.springs[i].setTarget(new Vec3(-turnDelta * 2.4 * k + windSway * k, 0, 0));
+      const off = heroViz.cape.springs[i].update(dt);
+      heroViz.cape.segs[i].rotation.z = off.x * 0.7;
+      heroViz.cape.segs[i].rotation.x = -0.1 * k + Math.abs(off.x) * 0.3;
+    }
+  }
+
+  // ---------- 怪物模型（参数化拼装，依据 GameData.MONSTERS[].body 配置） ----------
+  function buildMonsterModel(def) {
+    const b = def.body;
+    const g = new THREE.Group();
+    const isFire = def.element === 'fire', isIce = def.element === 'ice';
+    const bodyMat = matStd(def.color, isFire ? { emissive: new THREE.Color(0xff3c00), emissiveIntensity: 0.16 } : {});
+    const accentMat = matStd(def.accent, isIce ? { emissive: new THREE.Color(0x3a8a90), emissiveIntensity: 0.14 } : {});
+    const parts = {};
+
+    const legY = b.legLen + b.bodyRad * 0.55;
+    const body = new THREE.Mesh(new THREE.CapsuleGeometry(b.bodyRad, b.bodyLen, 4, 8), bodyMat);
+    body.rotation.z = Math.PI / 2; body.position.y = legY; g.add(body);
+
+    const head = new THREE.Mesh(new THREE.BoxGeometry(b.headSize, b.headSize * 0.9, b.headSize * 1.1), accentMat);
+    head.position.set(0, legY + b.bodyRad * 0.25, b.bodyLen / 2 + b.headSize * 0.35);
+    g.add(head); parts.head = head;
+
+    const legs = [];
+    let idx = 0;
+    for (const lx of [-b.bodyRad * 0.75, b.bodyRad * 0.75]) {
+      for (const lz of [-b.bodyLen * 0.32, b.bodyLen * 0.32]) {
+        const leg = new THREE.Mesh(new THREE.CylinderGeometry(b.bodyRad * 0.2, b.bodyRad * 0.16, b.legLen, 6), bodyMat);
+        leg.position.set(lx, b.legLen / 2, lz);
+        g.add(leg); legs.push(leg);
+        if (lz > 0 && idx === 0) { parts.paw = leg; idx++; } // 前右腿代表「前掌」弱点
+      }
+    }
+
+    if (b.hasEars) {
+      const earGeo = new THREE.ConeGeometry(b.headSize * 0.22, b.headSize * 0.55, 5);
+      const earL = new THREE.Mesh(earGeo, accentMat);
+      earL.position.set(-b.headSize * 0.3, legY + b.bodyRad * 0.25 + b.headSize * 0.65, b.bodyLen / 2 + b.headSize * 0.25);
+      earL.rotation.z = 0.22; g.add(earL);
+      const earR = earL.clone(); earR.position.x *= -1; earR.rotation.z *= -1; g.add(earR);
+    }
+
+    if (b.hasShell) {
+      const shell = new THREE.Mesh(new THREE.SphereGeometry(b.bodyRad * 1.4, 8, 6, 0, Math.PI * 2, 0, Math.PI / 1.7), accentMat);
+      shell.position.set(0, legY + b.bodyRad * 0.55, 0);
+      g.add(shell); parts.shell = shell;
+    }
+
+    if (b.hasWings) {
+      const wingGeo = new THREE.ConeGeometry(b.bodyLen * 0.5, b.bodyLen * 0.05, 3);
+      const wingL = new THREE.Mesh(wingGeo, matStd(def.accent, { transparent: true, opacity: 0.88, side: THREE.DoubleSide }));
+      wingL.rotation.z = Math.PI / 2; wingL.rotation.y = 0.5;
+      wingL.position.set(-b.bodyRad * 0.9, legY + b.bodyRad * 0.7, 0);
+      g.add(wingL);
+      const wingR = wingL.clone(); wingR.position.x *= -1; wingR.rotation.y *= -1; g.add(wingR);
+      parts.wing = wingL; g.userData.wingPair = [wingL, wingR];
+    }
+
+    let tailChain = null;
+    if (b.hasTail) {
+      const segs = [], springs = [];
+      for (let i = 0; i < 3; i++) {
+        const seg = new THREE.Mesh(new THREE.ConeGeometry(b.bodyRad * (0.48 - i * 0.09), b.bodyLen * 0.3, 6), bodyMat);
+        seg.rotation.x = Math.PI / 2;
+        seg.position.set(0, legY, -(b.bodyLen / 2 + i * b.bodyLen * 0.28));
+        g.add(seg); segs.push(seg);
+        springs.push(new Spring3({ stiffness: 30, damping: 5.5 }));
+      }
+      tailChain = { segs, springs, baseZ: segs.map(s => s.position.z) };
+      parts.tail = segs[segs.length - 1];
+    }
+
+    for (const wp of def.weakpoints) {
+      const mesh = parts[wp.id] || parts.head;
+      mesh.userData.isWeakpoint = true;
+    }
+
+    return { group: g, legs, tailChain, wings: g.userData.wingPair || null, parts, breathPhase: Math.random() * 10, baseY: legY };
+  }
+
+  function updateMonsterIdle(dt) {
+    const mm = world.monster; if (!mm) return;
+    mm.breathPhase += dt;
+    const breathe = 1 + Math.sin(mm.breathPhase * 1.6) * 0.018;
+    mm.group.children.forEach(() => {}); // no-op guard
+    mm.group.scale.set(breathe, breathe, breathe);
+    if (mm.wings) {
+      const flap = Math.sin(mm.breathPhase * 2.4) * 0.25;
+      mm.wings[0].rotation.x = flap; mm.wings[1].rotation.x = -flap;
+    }
+    if (mm.tailChain) {
+      for (let i = 0; i < mm.tailChain.segs.length; i++) {
+        const sway = Math.sin(mm.breathPhase * 1.1 + i * 0.7) * 0.1 * (i + 1) * 0.5;
+        mm.tailChain.springs[i].setTarget(new Vec3(sway, 0, mm.tailChain.baseZ[i]));
+        const off = mm.tailChain.springs[i].update(dt);
+        mm.tailChain.segs[i].position.x = off.x;
+        mm.tailChain.segs[i].position.z = off.z;
+      }
+    }
+  }
+
+  // ---------- 地形与场景布置 ----------
+  function buildGround(cfg) {
+    const geo = new THREE.PlaneGeometry(30, 30, 44, 44);
+    geo.rotateX(-Math.PI / 2);
+    const pos = geo.attributes.position;
+    const colors = new Float32Array(pos.count * 3);
+    const c1 = new THREE.Color(cfg.ground), c2 = new THREE.Color(cfg.ground2);
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i), z = pos.getZ(i);
+      const h = terrainHeight(x, z);
+      pos.setY(i, h);
+      const t = Math.min(1, Math.max(0, (h + 0.15) / 0.3));
+      const c = c1.clone().lerp(c2, t);
+      colors[i * 3] = c.r; colors[i * 3 + 1] = c.g; colors[i * 3 + 2] = c.b;
+    }
+    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    geo.computeVertexNormals();
+    const mat = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.95 });
+    const mesh = new THREE.Mesh(geo, mat);
+    scene.add(mesh);
+    return mesh;
+  }
+
+  function buildProp(kind) {
+    const g = new THREE.Group();
+    if (kind === 'tree') {
+      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.13, 1.1, 6), matStd(0x3c2a18));
+      trunk.position.y = 0.55; g.add(trunk);
+      for (let i = 0; i < 2; i++) {
+        const foliage = new THREE.Mesh(new THREE.IcosahedronGeometry(0.5 - i * 0.12, 0), matStd(0x3f5a2a));
+        foliage.position.y = 1.05 + i * 0.4; g.add(foliage);
+      }
+    } else if (kind === 'rock') {
+      const rock = new THREE.Mesh(new THREE.IcosahedronGeometry(0.4, 0), matStd(0x54545c));
+      rock.scale.set(1, 0.55 + Math.random() * 0.4, 0.8 + Math.random() * 0.3);
+      rock.position.y = 0.24; g.add(rock);
+    } else if (kind === 'ice') {
+      for (let i = 0; i < 3; i++) {
+        const h = 0.7 - i * 0.15;
+        const shard = new THREE.Mesh(new THREE.ConeGeometry(0.12 - i * 0.02, h, 5), matStd(0xcfeff0, { transparent: true, opacity: 0.85, emissive: new THREE.Color(0x6fd0d6), emissiveIntensity: 0.2 }));
+        shard.position.set((Math.random() - 0.5) * 0.3, h / 2, (Math.random() - 0.5) * 0.3);
+        shard.rotation.z = (Math.random() - 0.5) * 0.3;
+        g.add(shard);
+      }
+    } else if (kind === 'ember-rock') {
+      const rock = new THREE.Mesh(new THREE.IcosahedronGeometry(0.42, 0), matStd(0x2a1610));
+      rock.scale.set(1, 0.7, 0.9); rock.position.y = 0.26; g.add(rock);
+      const crack = new THREE.Mesh(new THREE.IcosahedronGeometry(0.2, 0), matStd(0xff6a2a, { emissive: new THREE.Color(0xff5a1a), emissiveIntensity: 0.9 }));
+      crack.position.y = 0.26; crack.scale.set(1, 0.5, 0.7); g.add(crack);
+    } else if (kind === 'pillar') {
+      const h = 1.4 + Math.random() * 1.0;
+      const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.26, h, 6), matStd(0x5c5540));
+      pillar.position.y = h / 2; pillar.rotation.z = (Math.random() - 0.5) * 0.25;
+      g.add(pillar);
+      if (Math.random() > 0.4) {
+        const cap = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.16, 0.5), matStd(0x6a6248));
+        cap.position.y = h; g.add(cap);
+      }
+    }
+    return g;
+  }
+
+  function scatterProps(cfg) {
+    for (let i = 0; i < cfg.propCount; i++) {
+      const ang = Math.random() * Math.PI * 2, rad = 3.4 + Math.random() * 8.2;
+      const x = Math.sin(ang) * rad, z = Math.cos(ang) * rad;
+      const prop = buildProp(cfg.propKind);
+      prop.position.set(x, terrainHeight(x, z), z);
+      prop.rotation.y = Math.random() * Math.PI * 2;
+      const s = 0.8 + Math.random() * 0.5;
+      prop.scale.set(s, s, s);
+      scene.add(prop);
+      world.props.push(prop);
+    }
+  }
+
+  function clearWorldObjects() {
+    if (world.ground) { scene.remove(world.ground); world.ground.geometry.dispose(); world.ground.material.dispose(); }
+    world.props.forEach(p => scene.remove(p)); world.props = [];
+    world.particleVisuals.forEach(pv => pv.dispose()); world.particleVisuals = [];
+    if (world.monster) { scene.remove(world.monster.group); world.monster = null; }
+  }
+
+  function loadScene(cfg, monsterDef) {
+    clearWorldObjects();
+    scene.background = new THREE.Color(cfg.sky);
+    scene.fog = new THREE.FogExp2(cfg.fog, cfg.fogDensity);
+    world.amb.color.setHex(cfg.ambient); world.amb.intensity = cfg.ambientI;
+    world.sun.color.setHex(cfg.sun); world.sun.intensity = cfg.sunI;
+    world.ground = buildGround(cfg);
+    scatterProps(cfg);
+
+    const pv = new ParticleVisual(Object.assign({}, cfg.particle, { pos: new Vec3(0, 1, 0), maxParticles: 90, loop: true }));
+    world.particleVisuals.push(pv);
+    world.ambientPV = pv;
+
+    const mm = buildMonsterModel(monsterDef);
+    mm.group.position.set(2.4, terrainHeight(2.4, -1.4), -1.4);
+    scene.add(mm.group);
+    world.monster = mm;
+
+    heroViz.pos = new Vec3(0, 0, 3.4); heroViz.facing = Math.PI; heroViz.prevFacing = Math.PI;
+    heroViz.group.position.set(heroViz.pos.x, terrainHeight(0, 3.4), heroViz.pos.z);
+    heroViz.group.rotation.y = Math.PI;
+    camMode = 'explore';
+  }
+
+  // ---------- 相机：探索/战斗两种取景，弹簧阻尼平滑过渡 ----------
+  // 探索模式下相机围绕 hero 旋转，camYawExternal 由 Main 侧鼠标/触摸拖拽驱动，
+  // 决定"当前视角前方"。相机位置在 hero 后方 camYawExternal + π 方向。
+  function exploreCamDesired() {
+    const yaw = camYawExternal;
+    const back = new Vec3(Math.sin(yaw + Math.PI), 0, Math.cos(yaw + Math.PI));
+    return {
+      pos: new Vec3(heroViz.pos.x + back.x * 4.0, heroViz.pos.y + 2.5, heroViz.pos.z + back.z * 4.0),
+      look: new Vec3(heroViz.pos.x, heroViz.pos.y + 1.05, heroViz.pos.z),
+    };
+  }
+  function battleCamDesired() {
+    return { pos: new Vec3(0.25, 2.05, 5.8), look: new Vec3(0.1, 1.05, -0.5) };
+  }
+  function updateCamera(dt) {
+    const desired = camMode === 'battle' ? battleCamDesired() : exploreCamDesired();
+    camSpring.setTarget(desired.pos);
+    const p = camSpring.update(dt);
+    camLook = Vec3.lerp(camLook, desired.look, Math.min(1, dt * 5));
+    let sx = 0, sy = 0;
+    if (shakeT > 0) { shakeT -= dt; sx = (Math.random() - 0.5) * shakeMag; sy = (Math.random() - 0.5) * shakeMag; }
+    camera.position.set(p.x + sx, p.y + sy, p.z);
+    camera.lookAt(camLook.x, camLook.y, camLook.z);
+  }
+  function triggerShake(mag = 0.1, dur = 0.22) { shakeMag = mag; shakeT = dur; }
+
+  function enterBattleStage() {
+    camMode = 'battle';
+    heroViz.group.position.set(-1.9, terrainHeight(-1.9, 2.2), 2.2);
+    heroViz.group.rotation.y = 2.7;
+    if (world.monster) {
+      world.monster.group.position.set(1.7, terrainHeight(1.7, -1.1), -1.1);
+      world.monster.group.rotation.y = -0.8;
+    }
+  }
+  function exitBattleStage() { camMode = 'explore'; }
+
+  // ---------- 命中特效：弱点闪光 / 屏幕震动 / 粒子爆发 ----------
+  function flashMesh(mesh, dur = 0.32) {
+    if (!mesh) return;
+    if (!mesh.material.emissive) return;
+    world.flashes.push({ mesh, t: 0, dur, origHex: mesh.material.emissive.getHex(), origInt: mesh.material.emissiveIntensity || 0 });
+  }
+  function updateFlashes(dt) {
+    for (let i = world.flashes.length - 1; i >= 0; i--) {
+      const f = world.flashes[i]; f.t += dt;
+      const k = 1 - Math.min(1, f.t / f.dur);
+      f.mesh.material.emissive.setHex(0xffe0c0);
+      f.mesh.material.emissiveIntensity = k * 1.5;
+      if (f.t >= f.dur) { f.mesh.material.emissiveIntensity = f.origInt; f.mesh.material.emissive.setHex(f.origHex); world.flashes.splice(i, 1); }
+    }
+  }
+  function burstAt(pos, color, count = 16, glow = true) {
+    const pv = new ParticleVisual({ pos: pos.clone(), rate: 0, loop: false, color, speed: [1.3, 2.5], gravity: new Vec3(0, -4.2, 0), spread: 1.9, life: [0.32, 0.65], size: [0.05, 0.11], drag: 0.12, maxParticles: count, glow });
+    pv.burst(count);
+    world.fx.push({ pv, t: 0, maxT: 1.1 });
+  }
+  function updateFx(dt) {
+    for (let i = world.fx.length - 1; i >= 0; i--) {
+      const fx = world.fx[i]; fx.pv.update(dt); fx.t += dt;
+      if (fx.t > fx.maxT) { fx.pv.dispose(); world.fx.splice(i, 1); }
+    }
+  }
+
+  function hitMonster(weakId) {
+    const mm = world.monster; if (!mm) return;
+    const mesh = (weakId && mm.parts[weakId]) || mm.parts.head;
+    flashMesh(mesh);
+    triggerShake(0.08, 0.16);
+    const wp = mesh.getWorldPosition(new THREE.Vector3());
+    burstAt(new Vec3(wp.x, wp.y, wp.z), weakId ? { r: 0.43, g: 0.69, b: 0.66 } : { r: 0.8, g: 0.3, b: 0.24 }, 16, true);
+  }
+  function hitHero() {
+    triggerShake(0.1, 0.2);
+    const wp = heroViz.group.position;
+    burstAt(new Vec3(wp.x, wp.y + 1.1, wp.z), { r: 0.63, g: 0.29, b: 0.24 }, 12, false);
+  }
+  function healBurst(onHero) {
+    const wp = onHero ? heroViz.group.position : (world.monster ? world.monster.group.position : new Vec3());
+    burstAt(new Vec3(wp.x, wp.y + 1.0, wp.z + (onHero?0:0)), { r: 0.43, g: 0.69, b: 0.66 }, 14, true);
+  }
+
+  // ---------- 弩炮抛体弹道：由 ODE 每帧积分求解，而非预烘焙曲线 ----------
+  function spawnProjectile(onHit) {
+    if (!world.monster) return;
+    const fromWorld = heroViz.parts.crossbow.getWorldPosition(new THREE.Vector3());
+    const toWorld = world.monster.parts.head.getWorldPosition(new THREE.Vector3());
+    const fromV = new Vec3(fromWorld.x, fromWorld.y, fromWorld.z);
+    const toV = new Vec3(toWorld.x, toWorld.y, toWorld.z);
+    const mesh = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.24, 5), matStd(0x2a2a2a, { metalness: 0.5, roughness: 0.4 }));
+    scene.add(mesh);
+    const g = 9, T = 0.5;
+    const dx = toV.x - fromV.x, dz = toV.z - fromV.z, dy = toV.y - fromV.y;
+    const vel = new Vec3(dx / T, (g * T) / 2 + dy / T, dz / T);
+    world.projectiles.push({ mesh, pos: fromV.clone(), vel, t: 0, T, g, onHit });
+  }
+  function updateProjectiles(dt) {
+    for (let i = world.projectiles.length - 1; i >= 0; i--) {
+      const pr = world.projectiles[i];
+      const res = ODE.semiImplicitEuler(pr.pos, pr.vel, () => new Vec3(0, -pr.g, 0), dt);
+      pr.pos = res.pos; pr.vel = res.vel; pr.t += dt;
+      pr.mesh.position.set(pr.pos.x, pr.pos.y, pr.pos.z);
+      const hs = Math.sqrt(pr.vel.x * pr.vel.x + pr.vel.z * pr.vel.z);
+      pr.mesh.rotation.x = -Math.atan2(pr.vel.y, hs);
+      pr.mesh.rotation.y = Math.atan2(pr.vel.x, pr.vel.z);
+      if (pr.t >= pr.T) { scene.remove(pr.mesh); pr.onHit && pr.onHit(); world.projectiles.splice(i, 1); }
+    }
+  }
+
+  // ---------- 主更新入口 ----------
+  function exploreUpdate(dt, moveDir, moving, camYaw) {
+    if (camYaw !== undefined) setCamYaw(camYaw);
+    updateHero(dt, moveDir, moving);
+    updateMonsterIdle(dt);
+    if (world.ambientPV) { world.ambientPV.setPosition(new Vec3(heroViz.pos.x, heroViz.pos.y + 1.6, heroViz.pos.z)); world.ambientPV.update(dt); }
+    updateFx(dt); updateCamera(dt);
+    return world.monster ? Collision.distanceXZ(heroViz.pos, world.monster.group.position) : 999;
+  }
+  function battleUpdate(dt) {
+    updateMonsterIdle(dt);
+    const capeTarget = new Vec3(Math.sin(performance.now() * 0.0006) * 0.05, 0, 0);
+    for (let i = 0; i < heroViz.cape.segs.length; i++) {
+      heroViz.cape.springs[i].setTarget(capeTarget.scale(i + 1));
+      const off = heroViz.cape.springs[i].update(dt);
+      heroViz.cape.segs[i].rotation.z = off.x * 0.7;
+    }
+    if (world.ambientPV) { world.ambientPV.setPosition(new Vec3(0, 1.4, -0.6)); world.ambientPV.update(dt); }
+    updateFlashes(dt); updateFx(dt); updateProjectiles(dt); updateCamera(dt);
+  }
+  function render() { renderer.render(scene, camera); }
+  function getExploreRadius() { return EXPLORE_RADIUS; }
+
+  return {
+    init, loadScene, exploreUpdate, battleUpdate, render, onResize,
+    enterBattleStage, exitBattleStage, hitMonster, hitHero, healBurst,
+    spawnProjectile, getExploreRadius, setCamYaw,
+  };
+})();
+// ===== [/MODULE:RENDER] =====
+
+// ===== [MODULE:BATTLE] =====
+/* ================================================================
+ * 战斗系统 BattleManager —— 回合制RPG核心玩法
+ * 数值公式为确定性代码，而状态效果结算 / 弱点破防触发 / 怪物AI决策
+ * 均声明为 PhysicsEngine.RuleEngine 规则，事件驱动，便于扩展。
+ * ================================================================ */
+const BattleManager = (() => {
+  let hero, monster, callbacks = {};
+  let ruleEngine, state = 'idle';
+  let weakHitCounts = {}, heroDefending = false, enraged = false, turnCount = 1;
+  const BREAK_THRESHOLD = 3;
+
+  function log(text) { callbacks.onLog && callbacks.onLog(text); }
+
+  function setupRules() {
+    ruleEngine = new PhysicsEngine.RuleEngine();
+    // 规则：中毒/灼烧 —— 回合结束时结算持续伤害
+    ruleEngine.register({
+      name: 'dot_tick', event: 'turn_end',
+      condition: (ctx) => ctx.target.status && (ctx.target.status.poison || ctx.target.status.burn),
+      effect: (ctx) => {
+        const st = ctx.target.status;
+        ['poison', 'burn'].forEach((key) => {
+          if (st[key] && st[key].turns > 0) {
+            const dmg = Math.max(1, Math.round(ctx.target.maxHp * GameData.STATUS_INFO[key].dmgPct));
+            ctx.target.hp = Math.max(0, ctx.target.hp - dmg);
+            st[key].turns--; if (st[key].turns <= 0) delete st[key];
+            log(`${ctx.target.name || '凯'} 因【${GameData.STATUS_INFO[key].name}】损失 ${dmg} 点HP`);
+            callbacks.onDamage && callbacks.onDamage(ctx.targetIsHero, dmg, key);
+          }
+        });
+      }
+    });
+    // 规则：破防倒计时 —— 回合结束时递减破防剩余回合
+    ruleEngine.register({
+      name: 'break_decay', event: 'turn_end',
+      condition: (ctx) => !ctx.targetIsHero && ctx.target.status && ctx.target.status.defBreak,
+      effect: (ctx) => {
+        ctx.target.status.defBreak.turns--;
+        if (ctx.target.status.defBreak.turns <= 0) { delete ctx.target.status.defBreak; log(`${ctx.target.name} 重新恢复了防御姿态`); }
+      }
+    });
+    // 规则：BOSS 血量低于30%时觉醒，强制使用最强技能
+    ruleEngine.register({
+      name: 'boss_enrage', event: 'enemy_decide',
+      condition: () => monster.boss && !enraged && monster.hp / monster.maxHp < 0.3,
+      effect: (ctx) => { enraged = true; ctx.forceIndex = monster.skills.length - 1; log(`${monster.name} 陷入了狂暴状态！`); }
+    });
+  }
+
+  // ---------- 伤害公式：核心数值为代码计算，情景修正交给规则引擎 ----------
+  function calcDamage(attacker, defender, power, weakId, defenderDefending) {
+    const dodge = Math.max(0, Math.min(0.25, (defender.spd - attacker.spd) * 0.015));
+    if (Math.random() < dodge) return { dmg: 0, isWeak: false, missed: true };
+    let base = Math.max(attacker.atk * power - defender.def * 0.5, attacker.atk * 0.15);
+    let mult = 1, isWeak = false;
+    if (weakId) {
+      const wp = (defender.weakpoints || []).find(w => w.id === weakId);
+      if (wp) { mult *= wp.mult; isWeak = true; }
+    }
+    if (defender.status && defender.status.defBreak) mult *= GameData.STATUS_INFO.defBreak.dmgMult;
+    if (defenderDefending) mult *= 0.5;
+    const ctx = { attacker, defender, base, multiplier: mult };
+    ruleEngine.fire('damage_calc', ctx);
+    let dmg = ctx.base * ctx.multiplier * (0.9 + Math.random() * 0.2);
+    return { dmg: Math.max(1, Math.round(dmg)), isWeak, missed: false };
+  }
+
+  function registerWeakHit(weakId) {
+    weakHitCounts[weakId] = (weakHitCounts[weakId] || 0) + 1;
+    const total = Object.values(weakHitCounts).reduce((a, b) => a + b, 0);
+    callbacks.onWeakHit && callbacks.onWeakHit(weakId, total, BREAK_THRESHOLD);
+    if (total >= BREAK_THRESHOLD && (!monster.status.defBreak)) {
+      monster.status.defBreak = { turns: 2 };
+      log(`${monster.name} 破防了！接下来两回合受到的伤害提升`);
+      callbacks.onBreak && callbacks.onBreak(true);
+    }
+  }
+
+  // ---------- 玩家行动 ----------
+  function useAction(skillId, weakId) {
+    if (state !== 'player_turn') return false;
+    const skill = GameData.SKILLS[skillId];
+    if (!skill) return false;
+    if (hero.mp < skill.mp) { log('MP不足，无法使用该技能'); return false; }
+    if (skill.minLevel && hero.level < skill.minLevel) return false;
+
+    state = 'resolving';
+    callbacks.onLock && callbacks.onLock(true);
+    ruleEngine.fire('turn_start', { actor: hero, isHero: true });
+    hero.mp -= skill.mp;
+
+    let effectiveWeak = null;
+    if (weakId && skill.canTargetWeak) {
+      const acc = skillId === 'crossbow' ? 0.85 : 0.65;
+      if (Math.random() < acc) effectiveWeak = weakId;
+    }
+    const { dmg, isWeak, missed } = calcDamage(hero, monster, skill.power, effectiveWeak, false);
+
+    const applyResult = () => {
+      if (!missed) {
+        monster.hp = Math.max(0, monster.hp - dmg);
+        log(`凯 使用【${skill.name}】，${isWeak ? `命中【${monster.weakpoints.find(w=>w.id===effectiveWeak).name}】，` : ''}造成 ${dmg} 点伤害`);
+        callbacks.onDamage && callbacks.onDamage(false, dmg, isWeak ? 'crit' : 'normal');
+        RenderEngine.hitMonster(isWeak ? effectiveWeak : null);
+        if (isWeak) registerWeakHit(effectiveWeak);
+      } else {
+        log(`凯 使用【${skill.name}】，但被 ${monster.name} 躲开了`);
+        callbacks.onDamage && callbacks.onDamage(false, 0, 'miss');
+      }
+      callbacks.onHpUpdate && callbacks.onHpUpdate();
+      if (monster.hp <= 0) { triggerVictory(); return; }
+      setTimeout(runEnemyTurn, 750);
+    };
+
+    if (skill.projectile && !missed) RenderEngine.spawnProjectile(applyResult);
+    else setTimeout(applyResult, 260);
+    return true;
+  }
+
+  function useItem(itemId) {
+    if (state !== 'player_turn') return false;
+    if (!hero.items || !hero.items[itemId]) { log('该道具数量不足'); return false; }
+    const item = GameData.ITEMS[itemId];
+    state = 'resolving'; callbacks.onLock && callbacks.onLock(true);
+    ruleEngine.fire('turn_start', { actor: hero, isHero: true });
+    hero.items[itemId]--;
+    if (item.kind === 'heal_hp') { hero.hp = Math.min(hero.maxHp, hero.hp + item.value); log(`凯 使用了${item.name}，恢复 ${item.value} 点HP`); }
+    else if (item.kind === 'heal_mp') { hero.mp = Math.min(hero.maxMp, hero.mp + item.value); log(`凯 使用了${item.name}，恢复 ${item.value} 点MP`); }
+    RenderEngine.healBurst(true);
+    callbacks.onHpUpdate && callbacks.onHpUpdate();
+    setTimeout(runEnemyTurn, 650);
+    return true;
+  }
+
+  function defend() {
+    if (state !== 'player_turn') return false;
+    state = 'resolving'; callbacks.onLock && callbacks.onLock(true);
+    ruleEngine.fire('turn_start', { actor: hero, isHero: true });
+    heroDefending = true;
+    const restore = Math.round(hero.maxMp * 0.08);
+    hero.mp = Math.min(hero.maxMp, hero.mp + restore);
+    log('凯 摆出防御架势，凝神恢复了少量MP');
+    callbacks.onHpUpdate && callbacks.onHpUpdate();
+    setTimeout(runEnemyTurn, 550);
+    return true;
+  }
+
+  function flee() {
+    if (state !== 'player_turn') return false;
+    state = 'resolving'; callbacks.onLock && callbacks.onLock(true);
+    const chance = Math.max(0.3, Math.min(0.9, 0.55 + (hero.spd - monster.spd) * 0.02));
+    if (Math.random() < chance) {
+      log('凯 成功脱离了战斗');
+      state = 'fled';
+      setTimeout(() => callbacks.onBattleEnd && callbacks.onBattleEnd('fled', {}), 400);
+    } else {
+      log('凯 试图撤退，但被拦住了！');
+      setTimeout(runEnemyTurn, 500);
+    }
+    return true;
+  }
+
+  // ---------- 怪物回合 ----------
+  function enemyDecide() {
+    const ctx = { forceIndex: null };
+    ruleEngine.fire('enemy_decide', ctx);
+    if (ctx.forceIndex != null) return monster.skills[ctx.forceIndex];
+    const pool = monster.skills.filter(s => !s.enrageOnly || enraged);
+    const roll = Math.random(); let acc = 0;
+    for (const s of pool) { acc += s.chance; if (roll <= acc) return s; }
+    return pool[0];
+  }
+
+  function runEnemyTurn() {
+    if (state === 'victory' || state === 'defeat' || state === 'fled') return;
+    ruleEngine.fire('turn_start', { actor: monster, isHero: false });
+    if (monster.status && monster.status.freeze && Math.random() < GameData.STATUS_INFO.freeze.skipChance) {
+      log(`${monster.name} 被冰封，无法行动！`);
+      delete monster.status.freeze;
+      finishRound(); return;
+    }
+    const skill = enemyDecide();
+    const { dmg, missed } = calcDamage(monster, hero, skill.power, null, heroDefending);
+    if (!missed) {
+      hero.hp = Math.max(0, hero.hp - dmg);
+      log(`${monster.name} 使用【${skill.name}】，对凯造成 ${dmg} 点伤害`);
+      callbacks.onDamage && callbacks.onDamage(true, dmg, 'normal');
+      RenderEngine.hitHero();
+      if (skill.status && Math.random() < 0.55) {
+        hero.status = hero.status || {};
+        hero.status[skill.status] = { turns: 2 };
+        log(`凯 受到了【${GameData.STATUS_INFO[skill.status].name}】效果`);
+        callbacks.onStatusApplied && callbacks.onStatusApplied(true, skill.status);
+      }
+    } else {
+      log(`${monster.name} 使用【${skill.name}】，但被凯躲开了`);
+      callbacks.onDamage && callbacks.onDamage(true, 0, 'miss');
+    }
+    callbacks.onHpUpdate && callbacks.onHpUpdate();
+    if (hero.hp <= 0) { triggerDefeat(); return; }
+    setTimeout(finishRound, 500);
+  }
+
+  function finishRound() {
+    ruleEngine.fire('turn_end', { target: hero, targetIsHero: true });
+    ruleEngine.fire('turn_end', { target: monster, targetIsHero: false });
+    callbacks.onHpUpdate && callbacks.onHpUpdate();
+    if (hero.hp <= 0) { triggerDefeat(); return; }
+    if (monster.hp <= 0) { triggerVictory(); return; }
+    turnCount++; heroDefending = false;
+    state = 'player_turn';
+    callbacks.onLock && callbacks.onLock(false);
+  }
+
+  function grantRewards() {
+    const exp = monster.exp;
+    hero.exp += exp;
+    let leveledUp = false;
+    const table = GameData.HERO_BASE.expTable;
+    while (hero.level < table.length && hero.exp >= table[hero.level]) {
+      hero.level++;
+      const g = GameData.HERO_BASE.growth;
+      hero.maxHp += g.hp; hero.maxMp += g.mp; hero.atk += g.atk; hero.def += g.def; hero.spd += g.spd;
+      leveledUp = true;
+    }
+    if (monster.statBoost) {
+      for (const k in monster.statBoost) {
+        if (k === 'hp') hero.maxHp += monster.statBoost[k]; else hero[k] = (hero[k] || 0) + monster.statBoost[k];
+      }
+    }
+    return { exp, leveledUp, drop: monster.drop, level: hero.level };
+  }
+
+  function triggerVictory() {
+    state = 'victory';
+    log(`${monster.name} 被击败了！`);
+    const rewards = grantRewards();
+    setTimeout(() => callbacks.onBattleEnd && callbacks.onBattleEnd('victory', rewards), 700);
+  }
+  function triggerDefeat() {
+    state = 'defeat';
+    log('凯 倒下了……');
+    setTimeout(() => callbacks.onBattleEnd && callbacks.onBattleEnd('defeat', {}), 700);
+  }
+
+  function start(heroRef, monsterId, cbs) {
+    hero = heroRef;
+    hero.status = {};
+    hero.hp = hero.maxHp; hero.mp = hero.maxMp; // 每次出猎前于营地自动回满
+    if (!hero.items) hero.items = Object.assign({}, GameData.HERO_BASE.items);
+    monster = GameData.freshMonster(monsterId);
+    monster.status = {};
+    weakHitCounts = {}; enraged = false; heroDefending = false; turnCount = 1;
+    callbacks = cbs || {};
+    setupRules();
+    state = 'player_turn';
+    log(`遭遇了 ${monster.name}（Lv.${monster.level}）！`);
+    callbacks.onHpUpdate && callbacks.onHpUpdate();
+  }
+
+  return {
+    start, useAction, useItem, defend, flee,
+    getHero: () => hero, getMonster: () => monster,
+    getAvailableSkills: () => Object.values(GameData.SKILLS).filter(s => !s.minLevel || hero.level >= s.minLevel),
+    getState: () => state,
+  };
+})();
+// ===== [/MODULE:BATTLE] =====
+
+// ===== [MODULE:UI] =====
+/* ================================================================
+ * UI 控制器 —— 纯视图层：screen 切换 / HUD 渲染 / 菜单交互
+ * 战斗行为直接调用 BattleManager（其内部再调度 RenderEngine 特效），
+ * 跨屏幕状态流转（进入猎场/返回营地/重试）委托给 Main。
+ * ================================================================ */
+const UI = (() => {
+  const $ = (id) => document.getElementById(id);
+  let locked = false, dontShowGuide = false, guideAutoShown = false;
+  let lastWeakTotal = 0, lastWeakThreshold = 3;
+
+  const GUIDE_CONTENT = [
+    { icon: '🧭', title: '移动探索', html: '在猎场中使用 <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / 方向键，或点击左下方向盘移动凯。' },
+    { icon: '⚔', title: '遭遇战斗', html: '靠近猎物即会自动触发回合制战斗，画面会出现遭遇提示。' },
+    { icon: '🎯', title: '弱点狙击', html: '攻击与部分技能可选择瞄准部位弱点：命中率略低，但伤害更高，累计命中还会使猎物<b>破防</b>，破防后受到的伤害进一步提升。' },
+    { icon: '✦', title: '战斗指令', html: '每回合可选择「攻击 / 技能 / 道具 / 防御 / 撤退」之一。技能消耗MP；防御可减免伤害并恢复少量MP；速度较高时撤退与闪避成功率更高。' },
+    { icon: '☠', title: '状态效果', html: '中毒 / 灼烧 会在回合结束时持续掉血；冰冻有几率使目标本回合无法行动。' },
+    { icon: '⚙', title: '幕后引擎', html: '战斗特效、镜头跟随、弩炮弹道均由自研物理引擎驱动：碰撞检测触发遭遇、粒子系统渲染特效、规则引擎结算状态与AI、微分方程求解器积分运动轨迹。' },
+  ];
+  function renderGuide() {
+    $('guide-scroll').innerHTML = GUIDE_CONTENT.map(g =>
+      `<div class="guide-item"><div class="guide-icon">${g.icon}</div><div><h4>${g.title}</h4><p>${g.html}</p></div></div>`
+    ).join('');
+  }
+
+  function showScreen(id) {
+    document.querySelectorAll('.screen').forEach(el => { if (el.id !== 'screen-guide') el.classList.remove('active'); });
+    if (id) $(id).classList.add('active');
+  }
+  function openGuide() { $('screen-guide').classList.add('active'); }
+  function closeGuide() { if ($('chk-noshow').checked) dontShowGuide = true; $('screen-guide').classList.remove('active'); }
+  function maybeAutoShowGuide() { if (!guideAutoShown && !dontShowGuide) { guideAutoShown = true; openGuide(); } }
+  function hideLoadingVeil() { $('loading-veil').classList.add('hide'); }
+
+  // ---------- 营地枢纽 ----------
+  function renderHub(hero, clearedSet) {
+    $('hub-lv').textContent = hero.level;
+    $('hub-hp').textContent = `${hero.hp}/${hero.maxHp}`;
+    $('hub-mp').textContent = `${hero.mp}/${hero.maxMp}`;
+    const cardsEl = $('scene-cards');
+    cardsEl.innerHTML = GameData.SCENES.map(sc => {
+      const mon = GameData.MONSTERS[sc.monster];
+      const locked_ = sc.order > 1 && clearedSet.size < sc.order - 1;
+      const cleared = clearedSet.has(sc.id);
+      return `<div class="scene-card journal-panel${locked_ ? ' locked' : ''}" data-scene="${sc.id}">
+        <div class="rivet bl"></div><div class="rivet br"></div>
+        <div class="sc-name">${sc.name}</div>
+        <div class="sc-monster">${locked_ ? '？？？' : mon.name + (sc.boss ? ' · 首领' : '')}</div>
+        ${cleared ? '<div class="sc-status">✓ 已狩猎</div>' : ''}
+        <div class="sc-lv">${locked_ ? '未解锁' : '推荐 Lv.' + sc.recommendLv}</div>
+      </div>`;
+    }).join('');
+    cardsEl.querySelectorAll('.scene-card:not(.locked)').forEach(card => {
+      card.addEventListener('click', () => Main.enterScene(card.dataset.scene));
+    });
+  }
+
+  // ---------- 探索 HUD ----------
+  function enterExploreHUD(sceneName) { showScreen(null); $('expl-scene-name').textContent = sceneName; $('hud-exploration').classList.add('active'); }
+  function exitExploreHUD() { $('hud-exploration').classList.remove('active'); }
+  function showEncounterFlash(cb) {
+    $('encounter-flash').classList.add('active');
+    setTimeout(() => { $('encounter-flash').classList.remove('active'); cb && cb(); }, 900);
+  }
+
+  // ---------- 战斗 HUD ----------
+  function enterBattleHUD() {
+    showScreen(null); exitExploreHUD();
+    $('hud-battle').classList.add('active');
+    lastWeakTotal = 0; $('battle-log').innerHTML = '';
+    renderTurnStrip();
+    updateBattleBars();
+  }
+  function exitBattleHUD() { $('hud-battle').classList.remove('active'); hideSubPanel(); }
+
+  function renderTurnStrip() {
+    const el = $('turn-strip'); el.innerHTML = '';
+    for (let i = 0; i < 6; i++) {
+      const chip = document.createElement('div');
+      chip.className = 'turn-chip' + (i === 0 ? ' now' : '');
+      chip.textContent = i % 2 === 0 ? '凯' : '兽';
+      el.appendChild(chip);
+    }
+  }
+
+  function updateBattleBars() {
+    const hero = BattleManager.getHero(), monster = BattleManager.getMonster();
+    if (!hero || !monster) return;
+    $('hero-hp-bar').style.width = Math.max(0, hero.hp / hero.maxHp * 100) + '%';
+    $('hero-hp-text').textContent = `${Math.max(0, Math.round(hero.hp))}/${hero.maxHp}`;
+    $('hero-mp-bar').style.width = Math.max(0, hero.mp / hero.maxMp * 100) + '%';
+    $('hero-mp-text').textContent = `${Math.round(hero.mp)}/${hero.maxMp}`;
+    $('mon-name').textContent = monster.name;
+    $('mon-lv').textContent = 'Lv.' + monster.level;
+    $('mon-hp-bar').style.width = Math.max(0, monster.hp / monster.maxHp * 100) + '%';
+    $('mon-hp-text').textContent = `${Math.max(0, Math.round(monster.hp))}/${monster.maxHp}`;
+    const broken = !!(monster.status && monster.status.defBreak);
+    $('mon-break-bar').style.width = (broken ? 100 : Math.min(100, lastWeakTotal / lastWeakThreshold * 100)) + '%';
+    $('mon-weakpoints').innerHTML = (monster.weakpoints || []).map(wp =>
+      `<span class="wp-tag${broken ? ' broken' : ''}">${wp.name} ×${wp.mult}</span>`
+    ).join('');
+  }
+  function updateWeakHit(weakId, total, threshold) { lastWeakTotal = total; lastWeakThreshold = threshold; updateBattleBars(); }
+
+  function appendLog(text) {
+    const el = $('battle-log');
+    const p = document.createElement('div');
+    p.className = 'new'; p.textContent = '· ' + text;
+    el.appendChild(p); el.scrollTop = el.scrollHeight;
+    setTimeout(() => p.classList.remove('new'), 900);
+  }
+
+  function showDamageNumber(isHero, amount, kind) {
+    if (kind === 'miss' && amount === 0) { /* still show MISS text */ }
+    const layer = $('dmg-layer');
+    const el = document.createElement('div');
+    let cls = 'dmg-num', text = '-' + amount;
+    if (kind === 'miss') { cls += ' miss'; text = 'MISS'; }
+    else if (kind === 'crit') { cls += ' crit'; }
+    else if (kind === 'heal') { cls += ' heal'; text = '+' + amount; }
+    el.className = cls;
+    const zone = isHero ? { l: 22, t: 56 } : { l: 64, t: 34 };
+    el.style.left = (zone.l + (Math.random() * 10 - 5)) + '%';
+    el.style.top = (zone.t + (Math.random() * 8 - 4)) + '%';
+    el.textContent = text;
+    layer.appendChild(el);
+    setTimeout(() => el.remove(), 1050);
+  }
+
+  function lockActions(l) {
+    locked = l;
+    ['act-attack', 'act-skill', 'act-item', 'act-defend', 'act-flee'].forEach(id => $(id).disabled = l);
+  }
+
+  // ---------- 子菜单：技能/道具/弱点目标选择 ----------
+  function showSubPanel(items, onSelect, onCancel) {
+    const list = $('sub-panel-items');
+    list.innerHTML = items.map(it =>
+      `<div class="sub-item${it.weak ? ' target-weak' : (it.id === 'body' ? ' target-body' : '')}" data-id="${it.id}" style="${it.disabled ? 'opacity:.35;pointer-events:none;' : ''}">
+        <div><div class="si-name">${it.name}</div>${it.desc ? `<div class="si-desc">${it.desc}</div>` : ''}</div>
+      </div>`
+    ).join('');
+    list.querySelectorAll('.sub-item').forEach(el => el.addEventListener('click', () => onSelect(el.dataset.id)));
+    $('sub-cancel').onclick = () => { onCancel && onCancel(); };
+    $('sub-panel').classList.add('active');
+  }
+  function hideSubPanel() { $('sub-panel').classList.remove('active'); }
+
+  function pickTarget(onDone) {
+    const monster = BattleManager.getMonster();
+    const items = [{ id: 'body', name: '攻击本体', desc: '稳定命中，无加成' }]
+      .concat((monster.weakpoints || []).map(wp => ({ id: wp.id, name: `瞄准：${wp.name}`, desc: `伤害 ×${wp.mult}，命中率较低`, weak: true })));
+    showSubPanel(items, (id) => { hideSubPanel(); onDone(id === 'body' ? null : id); }, hideSubPanel);
+  }
+
+  function onAttackClick() {
+    if (locked) return;
+    const monster = BattleManager.getMonster();
+    if (monster.weakpoints && monster.weakpoints.length) {
+      lockActions(true);
+      pickTarget(
+        (weakId) => { unlockAndAct(() => BattleManager.useAction('attack', weakId)); },
+        () => { lockActions(false); hideSubPanel(); }
+      );
+    } else BattleManager.useAction('attack', null);
+  }
+  function unlockAndAct(fn) { hideSubPanel(); lockActions(false); fn(); }
+  function onSkillClick() {
+    if (locked) return;
+    const hero = BattleManager.getHero();
+    const skills = BattleManager.getAvailableSkills().filter(s => s.id !== 'attack');
+    const items = skills.map(s => ({ id: s.id, name: s.name, desc: `MP ${s.mp} · ${s.desc}`, disabled: hero.mp < s.mp }));
+    if (!items.length) { appendLog('暂无可用技能'); return; }
+    showSubPanel(items, (skillId) => {
+      hideSubPanel();
+      const skill = GameData.SKILLS[skillId], monster = BattleManager.getMonster();
+      if (skill.canTargetWeak && monster.weakpoints && monster.weakpoints.length) pickTarget((weakId) => BattleManager.useAction(skillId, weakId));
+      else BattleManager.useAction(skillId, null);
+    }, hideSubPanel);
+  }
+  function onItemClick() {
+    if (locked) return;
+    const hero = BattleManager.getHero();
+    const items = Object.keys(GameData.ITEMS).map(id => {
+      const it = GameData.ITEMS[id]; const count = (hero.items && hero.items[id]) || 0;
+      return { id, name: `${it.name} ×${count}`, desc: it.desc, disabled: count <= 0 };
+    });
+    showSubPanel(items, (itemId) => { hideSubPanel(); BattleManager.useItem(itemId); }, hideSubPanel);
+  }
+
+  // ---------- 结算屏 ----------
+  function showResult(type, rewards) {
+    showScreen('screen-result');
+    const title = $('result-title'), eyebrow = $('result-eyebrow'), rewardList = $('reward-list');
+    const retryBtn = $('btn-result-retry'), contBtn = $('btn-result-continue');
+    eyebrow.textContent = 'HUNT REPORT · 战报';
+    if (type === 'victory') {
+      title.textContent = '狩猎成功'; title.className = 'result-title win';
+      rewardList.innerHTML = `<div class="reward-row"><span>经验值</span><b>+${rewards.exp} EXP</b></div>
+        <div class="reward-row"><span>战利品</span><b>${rewards.drop}</b></div>
+        ${rewards.leveledUp ? `<div class="levelup-tag">升级！凯 现在是 Lv.${rewards.level}</div>` : ''}`;
+      retryBtn.style.display = 'none'; contBtn.textContent = '返回营地';
+      contBtn.onclick = () => Main.backToHub(true);
+    } else if (type === 'defeat') {
+      title.textContent = '狩猎失败'; title.className = 'result-title lose';
+      rewardList.innerHTML = `<div class="reward-row"><span>凯</span><b>体力耗尽，被迫撤回营地</b></div>`;
+      retryBtn.style.display = 'inline-block'; contBtn.textContent = '返回营地';
+      retryBtn.onclick = () => Main.retryBattle();
+      contBtn.onclick = () => Main.backToHub(false);
+    } else {
+      title.textContent = '战术撤退'; title.className = 'result-title lose';
+      rewardList.innerHTML = `<div class="reward-row"><span>凯</span><b>安全脱离了战场</b></div>`;
+      retryBtn.style.display = 'none'; contBtn.textContent = '返回营地';
+      contBtn.onclick = () => Main.backToHub(false);
+    }
+  }
+
+  function init() {
+    renderGuide();
+    $('btn-guide-open').addEventListener('click', openGuide);
+    $('btn-guide-open-2').addEventListener('click', openGuide);
+    $('btn-guide-open-3').addEventListener('click', openGuide);
+    $('btn-guide-close').addEventListener('click', closeGuide);
+    $('act-attack').addEventListener('click', onAttackClick);
+    $('act-skill').addEventListener('click', onSkillClick);
+    $('act-item').addEventListener('click', onItemClick);
+    $('act-defend').addEventListener('click', () => { if (!locked) BattleManager.defend(); });
+    $('act-flee').addEventListener('click', () => { if (!locked) BattleManager.flee(); });
+  }
+
+  return {
+    init, showScreen, openGuide, closeGuide, maybeAutoShowGuide, hideLoadingVeil,
+    renderHub, enterExploreHUD, exitExploreHUD, showEncounterFlash,
+    enterBattleHUD, exitBattleHUD, updateBattleBars, updateWeakHit, appendLog,
+    showDamageNumber, lockActions, showResult,
+  };
+})();
+// ===== [/MODULE:UI] =====
+
+// ===== [MODULE:MAIN] =====
+/* ================================================================
+ * 主控 Main —— 状态机与输入：串联 物理引擎/数据/渲染/战斗/UI 五大模块
+ * ================================================================ */
+const Main = (() => {
+  const hero = GameData.cloneHero();
+  const cleared = new Set();
+  let currentSceneId = null;
+  let mode = 'title'; // title | hub | explore | encounter | battle | result
+  let keys = {};
+  let lastTime = 0;
+  let encounterLock = false;
+
+  // 相机水平朝向（世界弧度，+Z 方向 = 0），由鼠标/触摸拖拽驱动。
+  // 初始 camYaw = π 使相机在 hero 背后（hero.facing = π 时看 -Z，相机在 +Z）。
+  let camYaw = Math.PI;
+
+  function computeMoveVec() {
+    // 局部输入（lx：左右，lz：前后），相对当前相机视角，
+    // 然后按 camYaw 旋转到世界坐标。这样 W 永远是"朝相机前方走"。
+    let lx = 0, lz = 0;
+    if (keys['w'] || keys['arrowup'])    lz -= 1;
+    if (keys['s'] || keys['arrowdown'])  lz += 1;
+    if (keys['a'] || keys['arrowleft'])  lx -= 1;
+    if (keys['d'] || keys['arrowright']) lx += 1;
+    const len = Math.hypot(lx, lz);
+    if (len <= 0.001) return new PhysicsEngine.Vec3(0, 0, 0);
+    const sc = 1 / len;
+    lx *= sc; lz *= sc;
+    const c = Math.cos(camYaw), s = Math.sin(camYaw);
+    // 世界位移 = 向前*(-lz) + 右*lx，其中向前 = (sin y, cos y)，右 = (-cos y, sin y)
+    return new PhysicsEngine.Vec3(-lz * s - lx * c, 0, -lz * c + lx * s);
+  }
+
+  function setupInput() {
+    const MOVE_KEYS = ['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'];
+    window.addEventListener('keydown', (e) => {
+      const k = e.key.toLowerCase();
+      if (MOVE_KEYS.includes(k)) { keys[k] = true; e.preventDefault(); }
+    });
+    window.addEventListener('keyup', (e) => {
+      const k = e.key.toLowerCase();
+      if (MOVE_KEYS.includes(k)) { keys[k] = false; }
+    });
+
+    const dpadMap = { 'dpad-up': 'w', 'dpad-down': 's', 'dpad-left': 'a', 'dpad-right': 'd' };
+    Object.keys(dpadMap).forEach((id) => {
+      const el = document.getElementById(id), key = dpadMap[id];
+      const start = (e) => { e.preventDefault(); keys[key] = true; };
+      const end   = (e) => { e.preventDefault(); keys[key] = false; };
+      const move  = (e) => {
+        // 手指离开按钮边界时释放对应按键，避免 keys[key] 永远为 true
+        const rect = el.getBoundingClientRect();
+        for (const touch of e.touches) {
+          if (touch.clientX < rect.left || touch.clientX > rect.right ||
+              touch.clientY < rect.top  || touch.clientY > rect.bottom) {
+            keys[key] = false;
+          }
+        }
+      };
+      const passive = { passive: false };
+      el.addEventListener('touchstart',  start, passive);
+      el.addEventListener('touchend',    end,   passive);
+      el.addEventListener('touchcancel', end,   passive);
+      el.addEventListener('touchmove',   move,  passive);   // 新增：越界释放
+      el.addEventListener('mousedown', start);
+      el.addEventListener('mouseup',   end);
+      el.addEventListener('mouseleave',end);
+      el.addEventListener('contextmenu', (e) => e.preventDefault()); // 防长按弹出菜单
+    });
+
+    document.getElementById('btn-start').addEventListener('click', () => {
+      mode = 'hub';
+      UI.renderHub(hero, cleared);
+      UI.showScreen('screen-hub');
+      UI.maybeAutoShowGuide();
+    });
+    document.getElementById('btn-exit-scene').addEventListener('click', () => backToHub(false));
+
+    // ---------- 相机拖拽：鼠标/触摸旋转视角 ----------
+    // 只在 explore 模式下响应，避免战斗期间误触。
+    const CAM_ROT_SENS = 0.008;
+    let camDragging = false, camLastX = 0;
+    const canvas = document.getElementById('canvas-layer');
+
+    function onCamDragStart(x) { if (mode === 'explore') { camDragging = true; camLastX = x; } }
+    function onCamDragMove(x) {
+      if (!camDragging) return;
+      const dx = x - camLastX;
+      camLastX = x;
+      camYaw -= dx * CAM_ROT_SENS; // 鼠标右移 → yaw 减小 → 相机顺时针环绕 → 视野朝右
+    }
+    function onCamDragEnd() { camDragging = false; }
+
+    canvas.addEventListener('mousedown', (e) => {
+      // 左键或中键拖拽；忽略 d-pad 区域（pointer 已定位到 canvas 主区）
+      if (e.button === 0 || e.button === 1) { onCamDragStart(e.clientX); }
+    });
+    window.addEventListener('mousemove', (e) => {
+      if (camDragging) { onCamDragMove(e.clientX); }
+    });
+    window.addEventListener('mouseup', onCamDragEnd);
+
+    canvas.addEventListener('touchstart', (e) => {
+      if (mode !== 'explore') return;
+      if (e.touches.length === 1) {
+        const t = e.touches[0];
+        // 只有当触摸点不在 d-pad 区域内（d-pad 在屏幕左下）时才旋转相机
+        const pad = document.querySelector('.dpad');
+        if (pad) {
+          const r = pad.getBoundingClientRect();
+          if (t.clientX >= r.left && t.clientX <= r.right &&
+              t.clientY >= r.top  && t.clientY <= r.bottom) return;
+        }
+        onCamDragStart(t.clientX);
+      }
+    }, { passive: false });
+    canvas.addEventListener('touchmove', (e) => {
+      if (camDragging && e.touches.length === 1) {
+        e.preventDefault();
+        onCamDragMove(e.touches[0].clientX);
+      }
+    }, { passive: false });
+    canvas.addEventListener('touchend', onCamDragEnd);
+    canvas.addEventListener('touchcancel', onCamDragEnd);
+  }
+
+  function enterScene(sceneId) {
+    const cfg = GameData.SCENES.find(s => s.id === sceneId);
+    if (!cfg) return;
+    currentSceneId = sceneId; keys = {};
+    camYaw = Math.PI;
+    RenderEngine.loadScene(cfg, GameData.MONSTERS[cfg.monster]);
+    RenderEngine.setCamYaw(camYaw);
+    UI.enterExploreHUD(cfg.name);
+    mode = 'explore';
+  }
+
+  function triggerEncounter() {
+    if (encounterLock) return;
+    encounterLock = true; mode = 'encounter'; keys = {};
+    UI.showEncounterFlash(() => { startBattle(currentSceneId); encounterLock = false; });
+  }
+
+  function startBattle(sceneId) {
+    const cfg = GameData.SCENES.find(s => s.id === sceneId);
+    RenderEngine.enterBattleStage();
+    UI.enterBattleHUD();
+    mode = 'battle';
+    BattleManager.start(hero, cfg.monster, {
+      onLog: UI.appendLog,
+      onHpUpdate: UI.updateBattleBars,
+      onDamage: UI.showDamageNumber,
+      onLock: UI.lockActions,
+      onWeakHit: UI.updateWeakHit,
+      onBreak: UI.updateBattleBars,
+      onStatusApplied: () => {},
+      onBattleEnd: handleBattleEnd,
+    });
+  }
+
+  function handleBattleEnd(type, rewards) {
+    RenderEngine.exitBattleStage();
+    UI.exitBattleHUD();
+    if (type === 'victory' && currentSceneId) cleared.add(currentSceneId);
+    UI.showResult(type, rewards);
+    mode = 'result';
+  }
+
+  function backToHub(fromVictory) {
+    if (currentSceneId && fromVictory) cleared.add(currentSceneId);
+    UI.exitBattleHUD(); UI.exitExploreHUD();
+    UI.renderHub(hero, cleared);
+    UI.showScreen('screen-hub');
+    mode = 'hub'; keys = {};
+  }
+
+  function retryBattle() { startBattle(currentSceneId); }
+
+  function loop(t) {
+    const dt = Math.min(0.05, (t - lastTime) / 1000 || 0.016);
+    lastTime = t;
+    if (mode === 'explore') {
+      const mv = computeMoveVec();
+      const moving = mv.length() > 0.01;
+      const dist = RenderEngine.exploreUpdate(dt, mv, moving, camYaw);
+      if (dist < 1.3) triggerEncounter();
+    } else if (mode === 'battle') {
+      RenderEngine.battleUpdate(dt);
+    } else {
+      RenderEngine.exploreUpdate(dt, new PhysicsEngine.Vec3(0, 0, 0), false);
+    }
+    RenderEngine.render();
+    requestAnimationFrame(loop);
+  }
+
+  function init() {
+    RenderEngine.init(document.getElementById('canvas-layer'));
+    UI.init();
+    setupInput();
+    const firstScene = GameData.SCENES[0];
+    RenderEngine.loadScene(firstScene, GameData.MONSTERS[firstScene.monster]);
+    requestAnimationFrame(loop);
+    setTimeout(() => UI.hideLoadingVeil(), 500);
+  }
+
+  return { init, enterScene, backToHub, retryBattle };
+})();
+
+try {
+  Main.init();
+} catch (err) {
+  console.error(err);
+  const veil = document.getElementById('loading-veil');
+  if (veil) veil.innerHTML = '<div class="load-mark">初始化失败</div><div class="eyebrow" style="max-width:280px;text-align:center;">' + (err && err.message ? err.message : '请确认浏览器已启用 WebGL，并使用较新版本的 Chrome / Safari / Edge 打开本文件') + '</div>';
+}
+// ===== [/MODULE:MAIN] =====
+
+</script>
+</body>
+</html>

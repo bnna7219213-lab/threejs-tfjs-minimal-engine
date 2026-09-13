@@ -1,0 +1,22 @@
+{
+  "name": "threejs-tfjs-minimal-engine",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "description": "Three.js + TensorFlow.js minimal game engine (对标 Unity 原型层能力)。运行时内容生成是差异化核心。",
+  "scripts": {
+    "test":    "node --test tests/*.js",
+    "test:hard": "node tests/test-hardness.js",
+    "train":   "node train/train.js",
+    "start":   "node server.js",
+    "lint":    "node -c src/**/*.js src/gen/*.js src/demo/*.js train/*.js tests/*.js"
+  },
+  "devDependencies": {
+    "@tensorflow/tfjs-node": "^4.22.0"
+  },
+  "dependencies": {
+    "@tensorflow/tfjs": "^4.22.0",
+    "@tensorflow/tfjs-backend-wasm": "^4.22.0",
+    "three": "^0.173.0"
+  }
+}

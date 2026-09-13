@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>threejs-tfjs-minimal-engine v0.3 | 神经符号管线 · NLP → SDF → 3D Mesh</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,'Inter',sans-serif;background:#06060B;color:#E4E4EB;line-height:1.7;overflow-x:hidden}
+.neuro-tag{font-size:10px;letter-spacing:2px;color:#7C4DFF;font-weight:600}
+.neuro-bar{position:fixed;top:0;left:0;width:100%;height:3px;background:linear-gradient(90deg,#4A9EFF 0%,#7C4DFF 50%,#FF6B6B 100%);z-index:100}
+.hero{position:relative;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:6rem 2rem 4rem;overflow:hidden}
+.hero-bg{position:absolute;top:0;left:0;width:100%;height:100%;background:radial-gradient(ellipse at 50% 0%,rgba(74,158,255,0.08) 0%,transparent 60%),radial-gradient(ellipse at 80% 80%,rgba(124,77,255,0.06) 0%,transparent 40%),#06060B;z-index:0}
+.hero-grid{position:absolute;top:0;left:0;width:100%;height:100%;z-index:1;opacity:0.4}
+.hero-grid::before{content:'';position:absolute;top:0;left:0;width:100%;height:100%;background:linear-gradient(rgba(255,255,255,0.02) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,0.02) 1px,transparent 1px);background-size:40px 40px;mask:radial-gradient(ellipse at center,black 30%,transparent 70%)}
+.hero-content{position:relative;z-index:2;max-width:1000px}
+.badge{display:inline-block;padding:6px 18px;background:rgba(124,77,255,0.1);border:1px solid rgba(124,77,255,0.3);border-radius:20px;color:#B388FF;font-size:11px;font-weight:500;letter-spacing:1.5px;margin-bottom:2rem}
+.hero h1{font-size:clamp(2.2rem,6vw,4.2rem);font-weight:800;line-height:1.05;margin-bottom:1.5rem;background:linear-gradient(135deg,#FFFFFF 0%,#4A9EFF 50%,#7C4DFF 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.hero-sub{font-size:1.3rem;color:#888;max-width:650px;margin:0 auto 3rem;font-weight:300}
+.pipeline{display:flex;align-items:center;justify-content:center;gap:0.5rem;margin-bottom:3rem;flex-wrap:wrap;justify-content:center}
+.pipe-node{padding:10px 18px;border:1px solid rgba(74,158,255,0.3);border-radius:8px;background:rgba(74,158,255,0.05);font-size:0.85rem;font-weight:500;color:#4A9EFF}
+.pipe-node.sdf{border-color:rgba(124,77,255,0.3);background:rgba(124,77,255,0.05);color:#B388FF}
+.pipe-node.mesh{border-color:rgba(78,205,196,0.3);background:rgba(78,205,196,0.05);color:#4ECDC4}
+.pipe-arrow{color:#444;font-size:14px}
+.hero-cta{display:flex;gap:1rem;justify-content:center;flex-wrap:wrap;margin-bottom:2rem}
+.btn{padding:12px 28px;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none;display:inline-flex;align-items:center;gap:8px;transition:all 0.3s ease;cursor:pointer;border:none}
+.btn-primary{background:#4A9EFF;color:#0A0A14}
+.btn-primary:hover{background:#6BB5FF;transform:translateY(-2px);box-shadow:0 8px 24px rgba(74,158,255,0.25)}
+.btn-ghost{background:transparent;color:#4A9EFF;border:1px solid rgba(74,158,255,0.4)}
+.btn-ghost:hover{border-color:#4A9EFF;background:rgba(74,158,255,0.05)}
+
+.stats{padding:3rem 2rem;border-top:1px solid rgba(255,255,255,0.04);border-bottom:1px solid rgba(255,255,255,0.04);background:rgba(255,255,255,0.01)}
+.stats-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:1.5rem;max-width:900px;margin:0 auto}
+.stat{text-align:center}
+.stat h3{font-size:2rem;font-weight:800;color:#4A9EFF;margin-bottom:0.3rem}
+.stat p{color:#666;font-size:0.8rem}
+@media(max-width:600px){.stats-grid{grid-template-columns:repeat(2,1fr)}}
+
+.section{padding:5rem 2rem;max-width:1100px;margin:0 auto}
+.section-label{font-size:11px;letter-spacing:2px;color:#4A9EFF;font-weight:500;text-align:center;margin-bottom:1rem}
+.section h2{font-size:2rem;font-weight:700;text-align:center;margin-bottom:0.8rem}
+.section-sub{text-align:center;color:#888;font-size:1rem;max-width:600px;margin:0 auto 3rem}
+
+.comparison{display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;margin-top:2rem}
+.compare-col{padding:1.8rem;border:1px solid rgba(255,255,255,0.06);border-radius:12px;background:rgba(255,255,255,0.02)}
+.compare-col.bad{border-color:rgba(255,107,107,0.15)}
+.compare-col.good{border-color:rgba(78,205,196,0.15);background:rgba(78,205,196,0.03)}
+.compare-col h3{font-size:1rem;margin-bottom:0.5rem;display:flex;align-items:center;gap:0.5rem}
+.compare-col h3 .dot{width:8px;height:8px;border-radius:50%}
+.compare-col.bad h3 .dot{background:#FF6B6B}
+.compare-col.good h3 .dot{background:#4ECDC4}
+.compare-col .rows{margin-top:1rem}
+.compare-col .row{display:flex;align-items:flex-start;gap:0.8rem;padding:0.6rem 0;font-size:0.9rem;border-top:1px solid rgba(255,255,255,0.03)}
+.compare-col .row:first-child{border-top:none}
+.compare-col .icon{font-size:0.8rem;width:16px;flex-shrink:0;padding-top:2px}
+.compare-col.bad .icon{color:#FF6B6B}
+.compare-col.good .icon{color:#4ECDC4}
+.compare-col .row span{color:#999}
+
+.pipe-diagram{padding:4rem 2rem;max-width:900px;margin:0 auto;background:rgba(255,255,255,0.01);border-radius:20px;margin-top:2rem}
+.pipe-flow{display:flex;flex-direction:column;gap:0.8rem;margin-top:2rem;align-items:center}
+.pipe-step{width:100%;max-width:640px;padding:1.2rem 1.5rem;border:1px solid rgba(74,158,255,0.15);border-radius:10px;background:rgba(74,158,255,0.02);display:flex;align-items:center;gap:1.2rem;transition:all 0.3s ease}
+.pipe-step:hover{border-color:#4A9EFF;background:rgba(74,158,255,0.05)}
+.pipe-step.sdf{border-color:rgba(124,77,255,0.2);background:rgba(124,77,255,0.03)}
+.pipe-step.sdf:hover{border-color:#7C4DFF}
+.pipe-step.mesh{border-color:rgba(78,205,196,0.2);background:rgba(78,205,196,0.03)}
+.pipe-step.mesh:hover{border-color:#4ECDC4}
+.pipe-step .step-num{width:28px;height:28px;border-radius:50%;background:#4A9EFF;color:#0A0A14;font-weight:700;font-size:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.pipe-step.sdf .step-num{background:#7C4DFF;color:#FFFFFF}
+.pipe-step.mesh .step-num{background:#4ECDC4;color:#0A0A14}
+.pipe-step .step-label{flex:1}
+.pipe-step .step-label strong{display:block;font-size:0.95rem;margin-bottom:0.2rem}
+.pipe-step .step-label span{color:#888;font-size:0.8rem}
+.pipe-step .step-meta{font-size:0.7rem;color:#666;font-family:monospace;text-align:right}
+.pipe-step-down{color:#4A9EFF;opacity:0.4;font-size:16px}
+
+.tri-layer{display:grid;grid-template-columns:1fr 1fr 1fr;gap:1.5rem;margin-top:2rem}
+@media(max-width:800px){.tri-layer{grid-template-columns:1fr}}
+.layer-card{padding:1.5rem;border:1px solid rgba(255,255,255,0.06);border-radius:12px;background:rgba(255,255,255,0.02);transition:all 0.3s ease}
+.layer-card:hover{border-color:rgba(74,158,255,0.3);transform:translateY(-3px)}
+.layer-card .layer-head{display:flex;align-items:center;gap:0.8rem;margin-bottom:1rem}
+.layer-card .layer-badge{padding:3px 10px;border-radius:4px;font-size:10px;font-weight:600;letter-spacing:0.5px;background:rgba(74,158,255,0.15);color:#4A9EFF}
+.layer-card.sdf .layer-badge{background:rgba(124,77,255,0.15);color:#B388FF}
+.layer-card.mesh .layer-badge{background:rgba(78,205,196,0.15);color:#4ECDC4}
+.layer-card h3{font-size:1.1rem;font-weight:600}
+.layer-card .layer-desc{color:#999;font-size:0.85rem;margin-bottom:1.2rem;line-height:1.6}
+.layer-card pre{background:#0D0D14;border-radius:6px;padding:1rem;font-size:0.72rem;color:#B0B0B8;overflow-x:auto;line-height:1.6;font-family:'JetBrains Mono',monospace}
+.layer-card pre .k{color:#C792EA}
+.layer-card pre .s{color:#C3E88D}
+.layer-card pre .c{color:#6A6A70;font-style:italic}
+.layer-card pre .f{color:#82AAFF}
+.layer-card pre .n{color:#F78C6C}
+
+.training{display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;margin-top:2rem}
+@media(max-width:700px){.training{grid-template-columns:1fr}}
+.train-card{padding:1.5rem;border:1px solid rgba(255,255,255,0.06);border-radius:12px;background:rgba(255,255,255,0.02)}
+.train-card .train-tag{display:inline-block;padding:3px 10px;border-radius:4px;font-size:10px;font-weight:600;background:rgba(74,158,255,0.1);color:#4A9EFF;margin-bottom:1rem}
+.train-card h3{font-size:1rem;font-weight:600;margin-bottom:0.5rem}
+.train-card p{color:#999;font-size:0.85rem;margin-bottom:1rem;line-height:1.7}
+.train-card pre{background:#0D0D14;border-radius:6px;padding:1rem;font-size:0.72rem;color:#B0B0B8;overflow-x:auto;line-height:1.6;font-family:monospace}
+.train-card pre .c{color:#6A6A70}
+.train-card pre .k{color:#C792EA}
+.train-card pre .f{color:#82AAFF}
+.train-card pre .n{color:#F78C6C}
+
+.roadmap-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:1rem;margin-top:2rem}
+.roadmap-item{padding:1.2rem;border-left:3px solid #4A9EFF;background:rgba(74,158,255,0.03);border-radius:0 10px 10px 0}
+.roadmap-item.sdf{border-color:#7C4DFF;background:rgba(124,77,255,0.03)}
+.roadmap-item h4{font-size:0.95rem;font-weight:600;margin-bottom:0.4rem;display:flex;align-items:center;gap:0.5rem}
+.roadmap-item .ph{font-size:10px;padding:2px 7px;border-radius:3px;font-weight:600;background:#4A9EFF;color:#0A0A14}
+.roadmap-item.sdf .ph{background:#7C4DFF;color:#FFFFFF}
+.roadmap-item .est{font-size:0.7rem;color:#7C4DFF;margin-left:auto}
+.roadmap-item p{color:#888;font-size:0.8rem;line-height:1.6}
+
+.footer{padding:3rem 2rem;text-align:center;border-top:1px solid rgba(255,255,255,0.04)}
+.footer .f1{color:#666;font-size:0.85rem;margin-bottom:0.5rem}
+.footer .f2{color:#555;font-size:0.75rem}
+.footer-links{display:flex;justify-content:center;gap:2rem;margin:1rem 0;flex-wrap:wrap}
+.footer-links a{color:#4A9EFF;text-decoration:none;font-size:0.85rem}
+</style>
+</head>
+<body>
+
+<div class="neuro-bar"></div>
+
+<!-- ═══ HERO ═══ -->
+<section class="hero">
+<div class="hero-bg"></div>
+<div class="hero-grid"></div>
+<div class="hero-content">
+
+<div class="badge">NEURO-SYMBOLIC PIPELINE · v0.3</div>
+
+<h1>NLP &rarr; SDF &rarr; 3D Mesh</h1>
+
+<p class="hero-sub">LSTM 把自然语言翻译成可编辑的 SDF 操作序列，Marching Cubes 从数学距离场提取精确水密 Mesh。每一步可读、可改、可微。</p>
+
+<div class="pipeline">
+<span class="pipe-node">Text</span>
+<span class="pipe-arrow">&rarr;</span>
+<span class="pipe-node">LSTM Decoder</span>
+<span class="pipe-arrow">&rarr;</span>
+<span class="pipe-node sdf">SDF Program</span>
+<span class="pipe-arrow">&rarr;</span>
+<span class="pipe-node mesh">Marching Cubes</span>
+<span class="pipe-arrow">&rarr;</span>
+<span class="pipe-node">Three.js</span>
+</div>
+
+<div class="hero-cta">
+<a href="#pipeline" class="btn btn-primary">↓ 查看管线</a>
+<a href="plan.md" class="btn btn-ghost">📄 plan.md</a>
+<a href="threejs-tfjs-minimal-engine/index.html" class="btn btn-ghost">▶ Demo</a>
+</div>
+
+</div>
+</section>
+
+<!-- ═══ STATS ═══ -->
+<section class="stats">
+<div class="stats-grid">
+<div class="stat"><h3>76/76</h3><p>测试通过</p></div>
+<div class="stat"><h3>Phase 3</h3><p>当前开发</p></div>
+<div class="stat"><h3>9 周</h3><p>Phase 3 工期</p></div>
+<div class="stat"><h3>0</h3><p>外部依赖</p></div>
+<div class="stat"><h3>100%</h3><p>可解释生成</p></div>
+</div>
+</section>
+
+<!-- ═══ WHY NEURO-SYMBOLIC ═══ -->
+<section class="section">
+<div class="section-label">CORE THESIS</div>
+<h2>为什么是神经符号？</h2>
+<p class="section-sub">黑盒生成的几何不可解释、不可编辑、常有伪影。程序化 SDF 每一步可读，用户可修改参数。神经网络负责理解语义，符号系统负责精确执行。</p>
+
+<div class="comparison">
+<div class="compare-col bad">
+<h3><span class="dot"></span>纯黑盒生成 (3D-GAN / NeRF)</h3>
+<div class="rows">
+<div class="row"><span class="icon">✗</span><span>不可解释：无法知道为什么生成这个形状</span></div>
+<div class="row"><span class="icon">✗</span><span>不可编辑：改不了一个参数</span></div>
+<div class="row"><span class="icon">✗</span><span>几何有伪影：非水密 mesh，法线错乱</span></div>
+<div class="row"><span class="icon">✗</span><span>需要大量 3D 标注数据</span></div>
+<div class="row"><span class="icon">✗</span><span>高分辨率显存爆炸</span></div>
+</div>
+</div>
+<div class="compare-col good">
+<h3><span class="dot"></span>神经符号管线 (LSTM + SDF + MC)</h3>
+<div class="rows">
+<div class="row"><span class="icon">✓</span><span>每一步操作可读，操作序列即中间表示</span></div>
+<div class="row"><span class="icon">✓</span><span>用户可修改参数 / 增删操作 / 重排序</span></div>
+<div class="row"><span class="icon">✓</span><span>SDF 数学保证水密 mesh，法线即梯度 ∇f</span></div>
+<div class="row"><span class="icon">✓</span><span>合成数据自监督，无需人工标注</span></div>
+<div class="row"><span class="icon">✓</span><span>SDF 可自适应采样，内存可控</span></div>
+</div>
+</div>
+</div>
+</section>
+
+<!-- ═══ PIPELINE ═══ -->
+<section class="pipe-diagram" id="pipeline">
+<div class="section-label">PIPELINE</div>
+<h2>完整管线</h2>
+<p class="section-sub">从一句自然语言到可交互的 3D 模型，五个阶段</p>
+
+<div class="pipe-flow">
+
+<div class="pipe-step">
+<div class="step-num">1</div>
+<div class="step-label"><strong>LSTM Encoder</strong><span>文本 → 嵌入向量 → 上下文向量</span></div>
+<div class="step-meta">text → embed → context<br>seq_len × 768-dim</div>
+</div>
+<div class="pipe-step-down">▼</div>
+
+<div class="pipe-step">
+<div class="step-num">2</div>
+<div class="step-label"><strong>LSTM Decoder (自回归)</strong><span>上下文 → SDF 操作 Token 流</span></div>
+<div class="step-meta">op_head: 操作类型<br>arg_head: 参数 (x,y,z,r)</div>
+</div>
+<div class="pipe-step-down">▼</div>
+
+<div class="pipe-step sdf">
+<div class="step-num">3</div>
+<div class="step-label"><strong>SDF Program Executor (CSG)</strong><span>操作序列 → 数学距离场组合</span></div>
+<div class="step-meta">union/intersect/subtract<br>smooth_union(k)</div>
+</div>
+<div class="pipe-step-down">▼</div>
+
+<div class="pipe-step mesh">
+<div class="step-num">4</div>
+<div class="step-label"><strong>Marching Cubes</strong><span>SDF 距离场 → 三角 Mesh</span></div>
+<div class="step-meta">128 面三角化表<br>线性插值 + ∇f 法线</div>
+</div>
+<div class="pipe-step-down">▼</div>
+
+<div class="pipe-step mesh">
+<div class="step-num">5</div>
+<div class="step-label"><strong>Three.js 渲染</strong><span>Mesh 导出 / Raymarching Shader</span></div>
+<div class="step-meta">GLTF 导出<br>或实时 GPU Raymarching</div>
+</div>
+
+</div>
+</section>
+
+<!-- ═══ THREE LAYERS ═══ -->
+<section class="section">
+<div class="section-label">ARCHITECTURE</div>
+<h2>三层架构</h2>
+<p class="section-sub">每层可独立测试，每层可编辑，每层可微</p>
+
+<div class="tri-layer">
+
+<div class="layer-card">
+<div class="layer-head">
+<span class="layer-badge">L1 · DECODER</span>
+<h3>LSTM 序列解码器</h3>
+</div>
+<p class="layer-desc">将文本上下文向量解码为 SDF 操作序列。op_head 预测操作类型，arg_head 预测连续参数。自回归生成，支持 Teacher Forcing 训练。</p>
+<pre><span class="c"># LSTM Decoder</span>
+<span class="k">class</span> <span class="f">SDFDecoder</span>:
+  LSTM(<span class="n">256</span>, layers=<span class="n">2</span>)
+  op_head  = Linear(<span class="n">256</span>, <span class="n">vocab</span>)
+  arg_head = Linear(<span class="n">256</span>, <span class="n">4</span>)
+  <span class="k">for</span> t <span class="k">in</span> max_ops:
+    op  = op_head(out)
+    arg = arg_head(out)
+    <span class="k">yield</span> (op, arg)</pre>
+</div>
+
+<div class="layer-card sdf">
+<div class="layer-head">
+<span class="layer-badge">L2 · SDF ENGINE</span>
+<h3>SDF 程序化执行器</h3>
+</div>
+<p class="layer-desc">每个操作对应可微 SDF 基元。用 CSG 布尔运算 (min/max) 组合。操作序列是可编辑的中间表示。</p>
+<pre><span class="c"># SDF Primitives</span>
+<span class="f">sphere</span>(c,r)   = |p-c| - r
+<span class="f">box</span>(c,s)      = max(|p-c|,0) + min(max(|p-c|),0)
+<span class="f">cylinder</span>(a,r,h) = max(|p_xy-a|-r, |p_z|-h/2)
+
+<span class="c"># CSG Boolean</span>
+union(A,B)     = min(A, B)
+subtract(A,B)  = max(A, -B)
+smooth(A,B,k)  = smoothMin(A, B, k)</pre>
+</div>
+
+<div class="layer-card mesh">
+<div class="layer-head">
+<span class="layer-badge">L3 · SURFACE</span>
+<h3>Marching Cubes</h3>
+</div>
+<p class="layer-desc">从 SDF 距离场提取精确三角 Mesh。128 面三角化表，线性插值求交点，SDF 梯度 ∇f 即法线。50³ 网格 CPU 实时。</p>
+<pre><span class="c"># Marching Cubes</span>
+<span class="k">for</span> cube <span class="k">in</span> grid:
+  <span class="k">if</span> 8-verts sign mismatch:
+    tri = lookup(<span class="n">128_table</span>)
+    pts = lerp(sdf, iso_level=<span class="n">0.0</span>)
+    nrm = gradient(sdf)  <span class="c"># ∇f</span>
+    <span class="k">yield</span> (pts, tri, nrm)</pre>
+</div>
+
+</div>
+</section>
+
+<!-- ═══ TRAINING ═══ -->
+<section class="section">
+<div class="section-label">TRAINING</div>
+<h2>训练策略</h2>
+<p class="section-sub">两阶段：先用模仿学习让系统跑起来，再用端到端可微做精细优化</p>
+
+<div class="training">
+
+<div class="train-card">
+<span class="train-tag">PHASE A · 启动快</span>
+<h3>方案 A：模仿学习</h3>
+<p>程序化合成 (文本描述, SDF 操作序列) 配对数据，无需人工标注。Teacher Forcing 训练，损失为操作类型 CrossEntropy + 参数 MSE。</p>
+<pre><span class="c"># 合成数据生成器</span>
+<span class="f">gen_pair</span>:
+  text = <span class="s">"a table with 4 legs"</span>
+  ops  = [sphere, translate, cylinder×4, for_loop]
+  <span class="k">yield</span> (text, ops)
+
+<span class="c"># 损失函数</span>
+loss = CrossEntropy(op_pred, op_gt)
+     + MSE(arg_pred, arg_gt)</pre>
+</div>
+
+<div class="train-card">
+<span class="train-tag">PHASE B · 最终目标</span>
+<h3>方案 B：端到端可微</h3>
+<p>LSTM → SDF → [Soft MC / DMTet] → Chamfer Distance。梯度一路反传到 LSTM 参数。MC 用 Soft Rasterizer 或 DMTet 替代实现可微。</p>
+<pre><span class="c"># 端到端训练</span>
+sdf   = decoder(text)
+mesh  = <span class="f">soft_mc</span>(sdf)
+loss  = <span class="f">chamfer</span>(mesh, gt_mesh)
+loss.<span class="f">backward</span>()  <span class="c"># LSTM 参数更新</span>
+
+<span class="c"># Chamfer Distance</span>
+CD = mean(min(d(P,G))) + mean(min(d(G,P)))</pre>
+</div>
+
+</div>
+</section>
+
+<!-- ═══ ROADMAP ═══ -->
+<section class="section">
+<div class="section-label">ROADMAP</div>
+<h2>实施路线</h2>
+<p class="section-sub">Phase 3 分 5 个子阶段，9 周完成。Phase 4-10 规划中。</p>
+
+<div class="roadmap-grid">
+
+<div class="roadmap-item sdf">
+<h4><span class="ph">P3a</span><span class="est">1 周</span></h4>
+<p>SDF 原语库 + CSG 运算</p>
+</div>
+<div class="roadmap-item sdf">
+<h4><span class="ph">P3b</span><span class="est">2 周</span></h4>
+<p>Marching Cubes 实现 + 法线</p>
+</div>
+<div class="roadmap-item sdf">
+<h4><span class="ph">P3c</span><span class="est">1 周</span></h4>
+<p>SDF 可视化 Demo + Raymarching</p>
+</div>
+<div class="roadmap-item sdf">
+<h4><span class="ph">P3d</span><span class="est">3 周</span></h4>
+<p>LSTM 解码器 + TF.js 训练</p>
+</div>
+<div class="roadmap-item sdf">
+<h4><span class="ph">P3e</span><span class="est">2 周</span></h4>
+<p>端到端整合到 index.html</p>
+</div>
+
+<div class="roadmap-item">
+<h4><span class="ph">P4</span></h4>
+<p>概念图引擎</p>
+</div>
+<div class="roadmap-item">
+<h4><span class="ph">P5</span></h4>
+<p>参数化模型生成器</p>
+</div>
+<div class="roadmap-item">
+<h4><span class="ph">P6</span></h4>
+<p>多语言 NLP 解析器</p>
+</div>
+<div class="roadmap-item">
+<h4><span class="ph">P7</span></h4>
+<p>TF.js 视觉编码器</p>
+</div>
+<div class="roadmap-item">
+<h4><span class="ph">P8-P10</span></h4>
+<p>RL 优化 / 多语言 / 综合 Demo</p>
+</div>
+
+</div>
+</section>
+
+<!-- ═══ FOOTER ═══ -->
+<section class="footer">
+<p class="f1"><strong>threejs-tfjs-minimal-engine v0.3</strong> — 神经符号管线 · NLP → SDF → 3D Mesh</p>
+<p class="f2">LSTM 把语义变成操作序列，SDF 把操作变成精确几何，Marching Cubes 把几何变成可渲染 Mesh</p>
+<div class="footer-links">
+<a href="plan.md">📄 plan.md</a>
+<a href="threejs-tfjs-minimal-engine/index.html">▶ Demo</a>
+</div>
+<p class="f2">v0.3 · 76/76 tests · 0 external dependencies · Phase 3 开发中</p>
+</section>
+
+</body>
+</html>

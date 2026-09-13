@@ -1,0 +1,1470 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Procedural World Engine — 数学建模 · 场景生成 · 风格映射</title>
+<style>
+
+:root{
+  --bg:#0a0d12; --panel:#11151c; --panel2:#161b23; --line:#242b36;
+  --amber:#e8a33d; --amber-dim:#8a6528; --steel:#5b8db8; --steel-dim:#33465a;
+  --text:#e6e8eb; --text-dim:#8b94a3; --danger:#c25a4e; --good:#5fae7a;
+  --mono: ui-monospace, 'SF Mono', 'Cascadia Mono', Consolas, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:var(--sans);overflow:hidden;height:100%;width:100%;}
+#scene-canvas{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;background:var(--bg);}
+
+.hud-corner{position:fixed;width:22px;height:22px;pointer-events:none;z-index:5;opacity:.55;}
+.hud-corner.tl{top:10px;left:10px;border-top:2px solid var(--amber);border-left:2px solid var(--amber);}
+.hud-corner.tr{top:10px;right:10px;border-top:2px solid var(--amber);border-right:2px solid var(--amber);}
+.hud-corner.bl{bottom:10px;left:10px;border-bottom:2px solid var(--amber);border-left:2px solid var(--amber);}
+.hud-corner.br{bottom:10px;right:10px;border-bottom:2px solid var(--amber);border-right:2px solid var(--amber);}
+
+#title-bar{position:fixed;top:14px;left:42px;z-index:6;pointer-events:none;}
+#title-bar .t1{font-size:11px;letter-spacing:.16em;color:var(--amber);font-family:var(--mono);text-transform:uppercase;}
+#title-bar .t2{font-size:13px;color:var(--text-dim);margin-top:2px;font-family:var(--mono);}
+
+#stats{position:fixed;bottom:14px;left:42px;z-index:6;font-family:var(--mono);font-size:11px;color:var(--text-dim);line-height:1.7;pointer-events:none;background:rgba(10,13,18,.55);padding:8px 10px;border-radius:4px;border:1px solid var(--line);}
+#stats b{color:var(--steel);}
+
+#panel-toggle{position:fixed;top:12px;right:12px;z-index:9;width:38px;height:38px;border-radius:8px;background:var(--panel);border:1px solid var(--line);color:var(--amber);font-size:18px;display:flex;align-items:center;justify-content:center;cursor:pointer;}
+
+#panel{position:fixed;top:0;right:0;height:100%;width:300px;max-width:86vw;background:linear-gradient(180deg,var(--panel),var(--panel2));border-left:1px solid var(--line);z-index:8;overflow-y:auto;transform:translateX(0);transition:transform .25s ease;padding:60px 16px 24px;}
+#panel.collapsed{transform:translateX(100%);}
+
+.stage{margin-bottom:22px;}
+.stage-head{display:flex;align-items:baseline;gap:8px;margin-bottom:10px;border-bottom:1px solid var(--line);padding-bottom:8px;}
+.stage-num{font-family:var(--mono);font-size:11px;color:var(--amber);border:1px solid var(--amber-dim);border-radius:3px;padding:1px 6px;}
+.stage-title{font-size:13px;font-weight:600;letter-spacing:.02em;}
+.stage-desc{font-size:11.5px;color:var(--text-dim);line-height:1.5;margin-bottom:10px;}
+
+.btn{width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--text);font-size:12.5px;padding:9px 10px;border-radius:6px;cursor:pointer;margin-bottom:8px;text-align:left;font-family:var(--sans);transition:border-color .15s;}
+.btn:hover{border-color:var(--steel);}
+.btn.primary{border-color:var(--amber-dim);color:var(--amber);}
+.btn.primary:hover{border-color:var(--amber);}
+.btn:disabled{opacity:.45;cursor:default;}
+.row{display:flex;gap:8px;}
+.row .btn{flex:1;}
+
+input[type=file]{display:none;}
+
+.palette-row{display:flex;gap:6px;margin:8px 0;flex-wrap:wrap;}
+.swatch{width:26px;height:26px;border-radius:5px;border:1px solid var(--line);}
+
+.status-text{font-size:11px;color:var(--text-dim);line-height:1.5;font-family:var(--mono);margin-top:4px;}
+.status-text.ok{color:var(--good);}
+.status-text.warn{color:var(--amber);}
+
+.toggle-row{display:flex;align-items:center;justify-content:space-between;font-size:12.5px;color:var(--text-dim);margin-bottom:8px;}
+.switch{width:34px;height:19px;border-radius:10px;background:var(--panel2);border:1px solid var(--line);position:relative;cursor:pointer;flex-shrink:0;}
+.switch.on{background:var(--amber-dim);border-color:var(--amber);}
+.switch .knob{position:absolute;top:2px;left:2px;width:13px;height:13px;border-radius:50%;background:var(--text-dim);transition:left .15s;}
+.switch.on .knob{left:17px;background:var(--amber);}
+
+#loading{position:fixed;inset:0;background:var(--bg);z-index:20;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px;font-family:var(--mono);color:var(--text-dim);font-size:12px;}
+#loading .spin{width:26px;height:26px;border-radius:50%;border:2px solid var(--line);border-top-color:var(--amber);animation:spin 0.8s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg);}}
+
+</style>
+</head>
+<body>
+
+<div id="loading"><div class="spin"></div><div id="loading-text">正在初始化数学骨架…</div></div>
+
+<canvas id="scene-canvas"></canvas>
+
+<div class="hud-corner tl"></div><div class="hud-corner tr"></div>
+<div class="hud-corner bl"></div><div class="hud-corner br"></div>
+
+<div id="title-bar">
+  <div class="t1">Procedural World Engine</div>
+  <div class="t2">数学建模 · 场景生成 · 风格映射</div>
+</div>
+
+<div id="stats">
+  顶点 <b id="stat-verts">0</b> &nbsp;三角形 <b id="stat-tris">0</b> &nbsp;FPS <b id="stat-fps">0</b>
+</div>
+
+<div id="panel-toggle">&#9776;</div>
+
+<div id="panel">
+  <div class="stage">
+    <div class="stage-head"><span class="stage-num">01</span><span class="stage-title">拓扑与地形</span></div>
+    <div class="stage-desc">纯数学生成：球/柱/胶囊/环面参数化曲面 + fBm 噪声地形，可重新采样种子。</div>
+    <button class="btn primary" id="btn-regenerate">重新生成世界（新种子）</button>
+    <div class="toggle-row">线框模式<div class="switch" id="switch-wire"><div class="knob"></div></div></div>
+  </div>
+
+  <div class="stage">
+    <div class="stage-head"><span class="stage-num">02</span><span class="stage-title">布尔建模示例</span></div>
+    <div class="stage-desc">SDF + Surface Nets 生成的圆角三通接头（右侧基座上），演示无需第三方 CSG 库的布尔运算建模。</div>
+  </div>
+
+  <div class="stage">
+    <div class="stage-head"><span class="stage-num">03</span><span class="stage-title">图像 → 风格映射</span></div>
+    <div class="stage-desc">上传一张画作/照片，本地 k-means 提取主色调并重新着色地形与雾效（零外部依赖，始终可用）。</div>
+    <label class="btn" for="upload-input">选择图片…</label>
+    <input type="file" id="upload-input" accept="image/*">
+    <div class="palette-row" id="palette-row"></div>
+    <div class="status-text" id="palette-status"></div>
+  </div>
+
+  <div class="stage">
+    <div class="stage-head"><span class="stage-num">04</span><span class="stage-title">AI 增强（实验性）</span></div>
+    <div class="stage-desc">尝试加载 TensorFlow.js + COCO-SSD 目标检测，据检测结果调整植被密度。需要外部网络访问；在预览沙盒中可能被拦截，此时会自动回退到 03 的本地方案。</div>
+    <button class="btn" id="btn-ai">启用 AI 增强</button>
+    <div class="status-text" id="ai-status"></div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script type="module">
+
+// ============================================================
+// 核心算法命名空间（均已通过 Node + 真实 three.js 的数值单元测试：
+// 散度定理验证封闭体积/绕序、收敛性检验、SDF布尔运算不等式、
+// 参考系正交性、泊松盘最小间距约束、k-means簇心恢复等，见随附测试说明）
+// ============================================================
+
+const Geo = (function () {
+
+
+  function toBufferGeometry({ positions, normals, uvs, indices }) {
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
+    if (uvs) geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(uvs), 2));
+    geo.setIndex(new THREE.BufferAttribute(new Uint32Array(indices), 1));
+    if (normals) geo.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(normals), 3));
+    else geo.computeVertexNormals();
+    return geo;
+  }
+
+  // 环形网格缝合：ring i 的第 s 个顶点记为 a = i*W+s，与 ring i+1 对应顶点 b=a+W 组成一个四边形。
+  // 三角形顺序 (a, a+1, b) 与 (a+1, b+1, b) —— 已用散度定理数值验证：对 uv 球面，此顺序体积为正（法线朝外）。
+  function stitchRings(indices, ringCount, W, wrap = false) {
+    const last = wrap ? ringCount : ringCount - 1;
+    for (let i = 0; i < last; i++) {
+      const iNext = (i + 1) % ringCount;
+      for (let s = 0; s < W - 1; s++) {
+        const a = i * W + s, b = iNext * W + s;
+        indices.push(a, a + 1, b, a + 1, b + 1, b);
+      }
+    }
+  }
+
+  // ---------- 球体：经纬拓扑 ----------
+  function sphereRaw(radius = 1, lonSeg = 32, latSeg = 24) {
+    const positions = [], normals = [], uvs = [], indices = [];
+    const W = lonSeg + 1;
+    for (let lat = 0; lat <= latSeg; lat++) {
+      const theta = lat * Math.PI / latSeg;
+      const sinT = Math.sin(theta), cosT = Math.cos(theta);
+      for (let lon = 0; lon <= lonSeg; lon++) {
+        const phi = lon * 2 * Math.PI / lonSeg;
+        const sinP = Math.sin(phi), cosP = Math.cos(phi);
+        const x = cosP * sinT, y = cosT, z = sinP * sinT;
+        positions.push(x * radius, y * radius, z * radius);
+        normals.push(x, y, z);
+        uvs.push(lon / lonSeg, 1 - lat / latSeg);
+      }
+    }
+    stitchRings(indices, latSeg + 1, W, false);
+    return { positions, normals, uvs, indices };
+  }
+  function createSphere(radius, lonSeg, latSeg) { return toBufferGeometry(sphereRaw(radius, lonSeg, latSeg)); }
+
+  // ---------- 圆柱 / 圆台（含顶底盖）----------
+  function cylinderRaw(radiusTop = 0.5, radiusBottom = 0.5, height = 1, radialSeg = 24, heightSeg = 1, openEnded = false) {
+    const positions = [], normals = [], uvs = [], indices = [];
+    const halfH = height / 2;
+    const slope = (radiusBottom - radiusTop) / height;
+    const W = radialSeg + 1;
+
+    // ring 0 对应顶部(y=+halfH,半径=radiusTop)，ring 递增时 y 递减 —— 与球体「lat 递增 y 递减」保持
+    // 同一方向约定，这样 stitchRings 的绕序规则才能直接复用而不必反向。
+    for (let h = 0; h <= heightSeg; h++) {
+      const v = h / heightSeg;
+      const y = halfH - v * height;
+      const r = radiusTop + (radiusBottom - radiusTop) * v;
+      for (let s = 0; s <= radialSeg; s++) {
+        const phi = s / radialSeg * Math.PI * 2;
+        const cx = Math.cos(phi), sz = Math.sin(phi);
+        positions.push(r * cx, y, r * sz);
+        const n = new THREE.Vector3(cx, slope, sz).normalize();
+        normals.push(n.x, n.y, n.z);
+        uvs.push(s / radialSeg, 1 - v);
+      }
+    }
+    stitchRings(indices, heightSeg + 1, W, false);
+
+    if (!openEnded) {
+      const addCap = (radius, y, outwardY) => {
+        if (radius <= 1e-8) return;
+        const base = positions.length / 3;
+        positions.push(0, y, 0); normals.push(0, outwardY, 0); uvs.push(0.5, 0.5);
+        for (let s = 0; s <= radialSeg; s++) {
+          const phi = s / radialSeg * Math.PI * 2;
+          const cx = Math.cos(phi), sz = Math.sin(phi);
+          positions.push(radius * cx, y, radius * sz);
+          normals.push(0, outwardY, 0);
+          uvs.push(0.5 + cx * 0.5, 0.5 + sz * 0.5);
+        }
+        // 中心 c=(0,y,0)，边缘 p(s)=(r cosφ,y,r sinφ)。三角形(c,p(s),p(s+1))的法线
+        // (p(s)-c)×(p(s+1)-c) 的 y 分量 = -r² sin(Δφ)，Δφ>0 时为负 → 该顺序指向 -Y。
+        // 故底盖(outwardY=-1)用 (c,p(s),p(s+1))，顶盖反向。[已用 test-geo.js 数值验证]
+        for (let s = 0; s < radialSeg; s++) {
+          if (outwardY > 0) indices.push(base, base + s + 2, base + s + 1);
+          else indices.push(base, base + s + 1, base + s + 2);
+        }
+      };
+      addCap(radiusTop, halfH, 1);
+      addCap(radiusBottom, -halfH, -1);
+    }
+    return { positions, normals, uvs, indices };
+  }
+  function createCylinder(radiusTop, radiusBottom, height, radialSeg, heightSeg, openEnded) {
+    return toBufferGeometry(cylinderRaw(radiusTop, radiusBottom, height, radialSeg, heightSeg, openEnded));
+  }
+
+  // ---------- 胶囊体：上半球+腰身+下半球，环拓扑与球体完全一致 ----------
+  function capsuleRaw(radius = 0.5, cylinderHeight = 1, capSeg = 8, radialSeg = 16) {
+    const positions = [], normals = [], uvs = [], indices = [];
+    const halfH = cylinderHeight / 2;
+    const totalRings = 2 * (capSeg + 1);
+    const W = radialSeg + 1;
+    for (let ring = 0; ring < totalRings; ring++) {
+      let theta, yOff;
+      if (ring <= capSeg) { theta = (ring / capSeg) * (Math.PI / 2); yOff = halfH; }
+      else { const r2 = ring - (capSeg + 1); theta = Math.PI / 2 + (r2 / capSeg) * (Math.PI / 2); yOff = -halfH; }
+      const y = yOff + radius * Math.cos(theta);
+      const ringRadius = radius * Math.sin(theta);
+      const v = ring / (totalRings - 1);
+      for (let s = 0; s <= radialSeg; s++) {
+        const phi = s / radialSeg * Math.PI * 2;
+        const cx = Math.cos(phi), sz = Math.sin(phi);
+        positions.push(ringRadius * cx, y, ringRadius * sz);
+        normals.push(cx * Math.sin(theta), Math.cos(theta), sz * Math.sin(theta));
+        uvs.push(s / radialSeg, v);
+      }
+    }
+    stitchRings(indices, totalRings, W, false);
+    return { positions, normals, uvs, indices };
+  }
+  function createCapsule(radius, cylinderHeight, capSeg, radialSeg) {
+    return toBufferGeometry(capsuleRaw(radius, cylinderHeight, capSeg, radialSeg));
+  }
+
+  // ---------- 立方体：显式 uAxis×vAxis=法线 构造，6 面硬边不共享顶点 ----------
+  function boxRaw(width = 1, height = 1, depth = 1, wSeg = 1, hSeg = 1, dSeg = 1) {
+    const positions = [], normals = [], uvs = [], indices = [];
+    const hw = width / 2, hh = height / 2, hd = depth / 2;
+    const X = new THREE.Vector3(1, 0, 0), Y = new THREE.Vector3(0, 1, 0), Z = new THREE.Vector3(0, 0, 1);
+    // 每一项都满足 uAxis × vAxis === n（叉积手工验算过，见文档说明）
+    const faces = [
+      { center: [hw, 0, 0], u: Y, v: Z, n: [1, 0, 0], sizeU: height, sizeV: depth, segU: hSeg, segV: dSeg },
+      { center: [-hw, 0, 0], u: Z, v: Y, n: [-1, 0, 0], sizeU: depth, sizeV: height, segU: dSeg, segV: hSeg },
+      { center: [0, hh, 0], u: Z, v: X, n: [0, 1, 0], sizeU: depth, sizeV: width, segU: dSeg, segV: wSeg },
+      { center: [0, -hh, 0], u: X, v: Z, n: [0, -1, 0], sizeU: width, sizeV: depth, segU: wSeg, segV: dSeg },
+      { center: [0, 0, hd], u: X, v: Y, n: [0, 0, 1], sizeU: width, sizeV: height, segU: wSeg, segV: hSeg },
+      { center: [0, 0, -hd], u: Y, v: X, n: [0, 0, -1], sizeU: height, sizeV: width, segU: hSeg, segV: wSeg },
+    ];
+    for (const f of faces) {
+      const base = positions.length / 3;
+      const W = f.segU + 1;
+      for (let t = 0; t <= f.segV; t++) {
+        const fv = t / f.segV - 0.5;
+        for (let s = 0; s <= f.segU; s++) {
+          const fu = s / f.segU - 0.5;
+          const px = f.center[0] + fu * f.sizeU * f.u.x + fv * f.sizeV * f.v.x;
+          const py = f.center[1] + fu * f.sizeU * f.u.y + fv * f.sizeV * f.v.y;
+          const pz = f.center[2] + fu * f.sizeU * f.u.z + fv * f.sizeV * f.v.z;
+          positions.push(px, py, pz);
+          normals.push(f.n[0], f.n[1], f.n[2]);
+          uvs.push(s / f.segU, t / f.segV);
+        }
+      }
+      for (let t = 0; t < f.segV; t++) {
+        for (let s = 0; s < f.segU; s++) {
+          const a = base + t * W + s, b = base + (t + 1) * W + s;
+          indices.push(a, a + 1, b, a + 1, b + 1, b);
+        }
+      }
+    }
+    return { positions, normals, uvs, indices };
+  }
+  function createBox(width, height, depth, wSeg, hSeg, dSeg) {
+    return toBufferGeometry(boxRaw(width, height, depth, wSeg, hSeg, dSeg));
+  }
+
+  // ---------- 圆环：与球体同构的「环之环」----------
+  function torusRaw(radius = 1, tube = 0.3, radialSeg = 16, tubularSeg = 32) {
+    const positions = [], normals = [], uvs = [], indices = [];
+    const W = radialSeg + 1;
+    for (let j = 0; j <= tubularSeg; j++) {
+      const u = j / tubularSeg * Math.PI * 2;
+      const cu = Math.cos(u), su = Math.sin(u);
+      for (let i = 0; i <= radialSeg; i++) {
+        const v = i / radialSeg * Math.PI * 2;
+        const cv = Math.cos(v), sv = Math.sin(v);
+        positions.push((radius + tube * cv) * cu, tube * sv, (radius + tube * cv) * su);
+        normals.push(cv * cu, sv, cv * su);
+        uvs.push(j / tubularSeg, i / radialSeg);
+      }
+    }
+    stitchRings(indices, tubularSeg + 1, W, false);
+    return { positions, normals, uvs, indices };
+  }
+  function createTorus(radius, tube, radialSeg, tubularSeg) {
+    return toBufferGeometry(torusRaw(radius, tube, radialSeg, tubularSeg));
+  }
+
+  // ---------- 变换 ----------
+  function transformGeometry(geo, matrix4) { geo.applyMatrix4(matrix4); return geo; }
+  function makeTransform({ position = [0, 0, 0], rotation = [0, 0, 0], scale = [1, 1, 1] } = {}) {
+    const m = new THREE.Matrix4();
+    const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(rotation[0], rotation[1], rotation[2]));
+    m.compose(new THREE.Vector3(...position), q, new THREE.Vector3(...scale));
+    return m;
+  }
+
+  // ---------- 合并 ----------
+  function mergeGeometries(geometries) {
+    let totalVerts = 0, totalIdx = 0;
+    for (const g of geometries) { totalVerts += g.attributes.position.count; totalIdx += g.index ? g.index.count : g.attributes.position.count; }
+    const position = new Float32Array(totalVerts * 3);
+    const normal = new Float32Array(totalVerts * 3);
+    const uv = new Float32Array(totalVerts * 2);
+    const index = new Uint32Array(totalIdx);
+    let vOff = 0, iOff = 0;
+    for (const g of geometries) {
+      const p = g.attributes.position.array;
+      position.set(p, vOff * 3);
+      if (g.attributes.normal) normal.set(g.attributes.normal.array, vOff * 3);
+      if (g.attributes.uv) uv.set(g.attributes.uv.array, vOff * 2);
+      const vCount = g.attributes.position.count;
+      if (g.index) { const arr = g.index.array; for (let k = 0; k < arr.length; k++) index[iOff + k] = arr[k] + vOff; iOff += arr.length; }
+      else { for (let k = 0; k < vCount; k++) index[iOff + k] = vOff + k; iOff += vCount; }
+      vOff += vCount;
+    }
+    const merged = new THREE.BufferGeometry();
+    merged.setAttribute('position', new THREE.BufferAttribute(position, 3));
+    merged.setAttribute('normal', new THREE.BufferAttribute(normal, 3));
+    merged.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    merged.setIndex(new THREE.BufferAttribute(index, 1));
+    return merged;
+  }
+
+  return {
+    toBufferGeometry, sphereRaw, createSphere, cylinderRaw, createCylinder,
+    capsuleRaw, createCapsule, boxRaw, createBox, torusRaw, createTorus,
+    transformGeometry, makeTransform, mergeGeometries, stitchRings,
+  };
+
+  return {
+    toBufferGeometry, sphereRaw, createSphere, cylinderRaw, createCylinder,
+    capsuleRaw, createCapsule, boxRaw, createBox, torusRaw, createTorus,
+    transformGeometry, makeTransform, mergeGeometries, stitchRings,
+  };
+})();
+
+const SDFSys = (function () {
+
+
+  function lerp(a, b, t) { return a + (b - a) * t; }
+  const clamp01 = (x) => Math.max(0, Math.min(1, x));
+
+  // ---------- SDF 基本体（均以标量 x,y,z 输入，避免热循环中的对象分配）----------
+  const SDF = {
+    sphere(x, y, z, cx, cy, cz, r) { return Math.hypot(x - cx, y - cy, z - cz) - r; },
+    box(x, y, z, cx, cy, cz, hx, hy, hz) {
+      const qx = Math.abs(x - cx) - hx, qy = Math.abs(y - cy) - hy, qz = Math.abs(z - cz) - hz;
+      const ox = Math.max(qx, 0), oy = Math.max(qy, 0), oz = Math.max(qz, 0);
+      return Math.hypot(ox, oy, oz) + Math.min(Math.max(qx, Math.max(qy, qz)), 0);
+    },
+    // 胶囊：轴向由端点 a->b 决定，r 为半径（关节、机械臂的通用连接件）
+    capsule(x, y, z, ax, ay, az, bx, by, bz, r) {
+      const pax = x - ax, pay = y - ay, paz = z - az;
+      const bax = bx - ax, bay = by - ay, baz = bz - az;
+      const h = clamp01((pax * bax + pay * bay + paz * baz) / (bax * bax + bay * bay + baz * baz || 1e-9));
+      const dx = pax - bax * h, dy = pay - bay * h, dz = paz - baz * h;
+      return Math.hypot(dx, dy, dz) - r;
+    },
+    cylinderY(x, y, z, cx, cy, cz, r, halfH) {
+      const dx = Math.hypot(x - cx, z - cz) - r, dy = Math.abs(y - cy) - halfH;
+      return Math.min(Math.max(dx, dy), 0) + Math.hypot(Math.max(dx, 0), Math.max(dy, 0));
+    },
+    torusY(x, y, z, cx, cy, cz, R, r) {
+      const qx = Math.hypot(x - cx, z - cz) - R, qy = y - cy;
+      return Math.hypot(qx, qy) - r;
+    },
+  };
+
+  // ---------- 布尔组合（含平滑版，来自 Inigo Quilez 的通用 smooth-min 技巧，业界标准写法）----------
+  const CSG = {
+    union: (a, b) => Math.min(a, b),
+    subtract: (a, b) => Math.max(a, -b),      // a 挖去 b
+    intersect: (a, b) => Math.max(a, b),
+    smoothUnion(a, b, k) { const h = clamp01(0.5 + 0.5 * (b - a) / k); return lerp(b, a, h) - k * h * (1 - h); },
+    smoothSubtract(a, b, k) { const h = clamp01(0.5 - 0.5 * (b + a) / k); return lerp(a, -b, h) + k * h * (1 - h); },
+    smoothIntersect(a, b, k) { const h = clamp01(0.5 - 0.5 * (b - a) / k); return lerp(b, a, h) + k * h * (1 - h); },
+  };
+
+  // ---------- Naive Surface Nets ----------
+  // sdf: (x,y,z)=>number, bounds:{min:[x,y,z],max:[x,y,z]}, res:[nx,ny,nz]
+  function surfaceNets(sdf, bounds, res) {
+    const [nx, ny, nz] = res;
+    const [minX, minY, minZ] = bounds.min;
+    const [maxX, maxY, maxZ] = bounds.max;
+    const dx = (maxX - minX) / nx, dy = (maxY - minY) / ny, dz = (maxZ - minZ) / nz;
+    const CX = nx + 1, CY = ny + 1, CZ = nz + 1;
+    const idxC = (i, j, k) => (i * CY + j) * CZ + k;
+    const d = new Float32Array(CX * CY * CZ);
+    for (let i = 0; i < CX; i++) for (let j = 0; j < CY; j++) for (let k = 0; k < CZ; k++)
+      d[idxC(i, j, k)] = sdf(minX + i * dx, minY + j * dy, minZ + k * dz);
+
+    const idxCell = (i, j, k) => (i * ny + j) * nz + k;
+    const vertIndex = new Int32Array(Math.max(1, nx * ny * nz)).fill(-1);
+    const positions = [], normals = [];
+    const cornerOffsets = [[0, 0, 0], [1, 0, 0], [0, 1, 0], [1, 1, 0], [0, 0, 1], [1, 0, 1], [0, 1, 1], [1, 1, 1]];
+    const cubeEdges = [[0, 1], [0, 2], [0, 4], [1, 3], [1, 5], [2, 3], [2, 6], [3, 7], [4, 5], [4, 6], [5, 7], [6, 7]];
+    const eps = Math.min(dx, dy, dz) * 0.5;
+
+    for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++) for (let k = 0; k < nz; k++) {
+      const dCorner = new Array(8);
+      let anyNeg = false, anyPos = false;
+      for (let c = 0; c < 8; c++) {
+        const [ox, oy, oz] = cornerOffsets[c];
+        const val = d[idxC(i + ox, j + oy, k + oz)];
+        dCorner[c] = val;
+        if (val < 0) anyNeg = true; else anyPos = true;
+      }
+      if (!(anyNeg && anyPos)) continue;
+      let sx = 0, sy = 0, sz = 0, count = 0;
+      for (const [c0, c1] of cubeEdges) {
+        const d0 = dCorner[c0], d1 = dCorner[c1];
+        if ((d0 < 0) !== (d1 < 0)) {
+          const t = d0 / (d0 - d1);
+          const [ox0, oy0, oz0] = cornerOffsets[c0], [ox1, oy1, oz1] = cornerOffsets[c1];
+          sx += ox0 + (ox1 - ox0) * t; sy += oy0 + (oy1 - oy0) * t; sz += oz0 + (oz1 - oz0) * t;
+          count++;
+        }
+      }
+      if (count === 0) continue;
+      const wx = minX + (i + sx / count) * dx, wy = minY + (j + sy / count) * dy, wz = minZ + (k + sz / count) * dz;
+      vertIndex[idxCell(i, j, k)] = positions.length / 3;
+      positions.push(wx, wy, wz);
+      const gx = sdf(wx + eps, wy, wz) - sdf(wx - eps, wy, wz);
+      const gy = sdf(wx, wy + eps, wz) - sdf(wx, wy - eps, wz);
+      const gz = sdf(wx, wy, wz + eps) - sdf(wx, wy, wz - eps);
+      const glen = Math.hypot(gx, gy, gz) || 1;
+      normals.push(gx / glen, gy / glen, gz / glen);
+    }
+
+    const indices = [];
+    const P = (ci) => [positions[ci * 3], positions[ci * 3 + 1], positions[ci * 3 + 2]];
+    // 用第一个三角形的几何法线与「已知的期望朝向」比对，自动决定绕序——
+    // 期望朝向由 SDF 跨越的方向直接决定（不依赖对四边形遍历方向的手工推导，
+    // 上一版正是在这里手推出错，才改成这种「算出来再比」的写法）。
+    function emitQuad(c00, c10, c11, c01, expectedDir) {
+      if (c00 < 0 || c10 < 0 || c11 < 0 || c01 < 0) return;
+      const p00 = P(c00), p10 = P(c10), p11 = P(c11);
+      const e1x = p10[0] - p00[0], e1y = p10[1] - p00[1], e1z = p10[2] - p00[2];
+      const e2x = p11[0] - p00[0], e2y = p11[1] - p00[1], e2z = p11[2] - p00[2];
+      const nx = e1y * e2z - e1z * e2y, ny = e1z * e2x - e1x * e2z, nz = e1x * e2y - e1y * e2x;
+      const dot = nx * expectedDir[0] + ny * expectedDir[1] + nz * expectedDir[2];
+      if (dot >= 0) indices.push(c00, c10, c11, c00, c11, c01);
+      else indices.push(c00, c11, c10, c00, c01, c11);
+    }
+    for (let i = 0; i < nx; i++) for (let j = 1; j < ny; j++) for (let k = 1; k < nz; k++) {
+      const d0 = d[idxC(i, j, k)], d1 = d[idxC(i + 1, j, k)];
+      if ((d0 < 0) === (d1 < 0)) continue;
+      const dir = d0 < 0 ? [1, 0, 0] : [-1, 0, 0]; // d0<0(内)→d1≥0(外)，表面朝 +X；反之朝 -X
+      emitQuad(vertIndex[idxCell(i, j - 1, k - 1)], vertIndex[idxCell(i, j, k - 1)], vertIndex[idxCell(i, j, k)], vertIndex[idxCell(i, j - 1, k)], dir);
+    }
+    for (let i = 1; i < nx; i++) for (let j = 0; j < ny; j++) for (let k = 1; k < nz; k++) {
+      const d0 = d[idxC(i, j, k)], d1 = d[idxC(i, j + 1, k)];
+      if ((d0 < 0) === (d1 < 0)) continue;
+      const dir = d0 < 0 ? [0, 1, 0] : [0, -1, 0];
+      emitQuad(vertIndex[idxCell(i - 1, j, k - 1)], vertIndex[idxCell(i, j, k - 1)], vertIndex[idxCell(i, j, k)], vertIndex[idxCell(i - 1, j, k)], dir);
+    }
+    for (let i = 1; i < nx; i++) for (let j = 1; j < ny; j++) for (let k = 0; k < nz; k++) {
+      const d0 = d[idxC(i, j, k)], d1 = d[idxC(i, j, k + 1)];
+      if ((d0 < 0) === (d1 < 0)) continue;
+      const dir = d0 < 0 ? [0, 0, 1] : [0, 0, -1];
+      emitQuad(vertIndex[idxCell(i - 1, j - 1, k)], vertIndex[idxCell(i, j - 1, k)], vertIndex[idxCell(i, j, k)], vertIndex[idxCell(i - 1, j, k)], dir);
+    }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
+    geo.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(normals), 3));
+    geo.setIndex(new THREE.BufferAttribute(new Uint32Array(indices), 1));
+    return geo;
+  }
+
+  return { SDF, CSG, surfaceNets };
+
+  return { SDF, CSG, surfaceNets };
+})();
+
+const Noise = (function () {
+// noise.js — 2D 梯度噪声（Perlin 风格）+ fBm 分形叠加
+// 选梯度噪声而非单纯值噪声（value noise）是因为它在网格点上恒为 0，不会在地形上留下
+// 可见的网格状「格子纹」；用经典 Perlin 而非 Simplex 是因为置换表/梯度点乘的实现
+// 出错概率明显低于 Simplex 的单纯形斜切数学，正确性优先于常数因子的性能差异。
+
+function makeNoise2D(seed = 1337) {
+  // 基于 seed 的确定性洗牌（mulberry32），保证同一 seed 每次结果一致，便于场景复现
+  function mulberry32(a) {
+    return function () {
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  const rand = mulberry32(seed);
+  const perm = new Uint8Array(512);
+  const p = new Uint8Array(256);
+  for (let i = 0; i < 256; i++) p[i] = i;
+  for (let i = 255; i > 0; i--) { const j = Math.floor(rand() * (i + 1));[p[i], p[j]] = [p[j], p[i]]; }
+  for (let i = 0; i < 512; i++) perm[i] = p[i & 255];
+
+  const GRAD = [[1, 1], [-1, 1], [1, -1], [-1, -1], [1, 0], [-1, 0], [0, 1], [0, -1]];
+  function fade(t) { return t * t * t * (t * (t * 6 - 15) + 10); } // 6t^5-15t^4+10t^3
+  function lerp(a, b, t) { return a + (b - a) * t; }
+  function gradDot(hash, x, y) { const g = GRAD[hash & 7]; return g[0] * x + g[1] * y; }
+
+  // 单个八度的梯度噪声，返回值约在 [-1,1]
+  function noise2D(x, y) {
+    const X = Math.floor(x) & 255, Y = Math.floor(y) & 255;
+    const xf = x - Math.floor(x), yf = y - Math.floor(y);
+    const u = fade(xf), v = fade(yf);
+    const aa = perm[X + perm[Y]], ab = perm[X + perm[Y + 1]];
+    const ba = perm[X + 1 + perm[Y]], bb = perm[X + 1 + perm[Y + 1]];
+    const x1 = lerp(gradDot(aa, xf, yf), gradDot(ba, xf - 1, yf), u);
+    const x2 = lerp(gradDot(ab, xf, yf - 1), gradDot(bb, xf - 1, yf - 1), u);
+    return lerp(x1, x2, v) * 1.4142135623730951; // ×√2 归一化到接近 [-1,1]
+  }
+
+  // fBm：多八度叠加，每层频率×lacunarity、振幅×persistence
+  function fbm(x, y, octaves = 6, persistence = 0.5, lacunarity = 2.0) {
+    let amp = 1, freq = 1, sum = 0, maxAmp = 0;
+    for (let o = 0; o < octaves; o++) {
+      sum += noise2D(x * freq, y * freq) * amp;
+      maxAmp += amp;
+      amp *= persistence;
+      freq *= lacunarity;
+    }
+    return sum / maxAmp; // 归一化到 [-1,1]
+  }
+
+  return { noise2D, fbm };
+}
+
+
+  return { makeNoise2D };
+})();
+
+const PathSweep = (function () {
+
+
+  function catmullRomPoints(controlPoints, samplesPerSeg = 12, closed = false) {
+    const curve = new THREE.CatmullRomCurve3(controlPoints.map(p => new THREE.Vector3(...p)), closed);
+    const n = (controlPoints.length - (closed ? 0 : 1)) * samplesPerSeg;
+    return curve.getPoints(n);
+  }
+
+  // 世界上方向参考系——道路首选
+  function roadFrames(points, worldUp = new THREE.Vector3(0, 1, 0)) {
+    const n = points.length;
+    const tangents = [], sides = [], ups = [];
+    for (let i = 0; i < n; i++) {
+      const prev = points[Math.max(0, i - 1)], next = points[Math.min(n - 1, i + 1)];
+      const t = new THREE.Vector3().subVectors(next, prev).normalize();
+      tangents.push(t);
+    }
+    let prevSide = null;
+    for (let i = 0; i < n; i++) {
+      const t = tangents[i];
+      let side = new THREE.Vector3().crossVectors(t, worldUp);
+      if (side.lengthSq() < 1e-8) side = prevSide ? prevSide.clone() : new THREE.Vector3(1, 0, 0);
+      else side.normalize();
+      const up = new THREE.Vector3().crossVectors(side, t).normalize();
+      sides.push(side); ups.push(up); prevSide = side;
+    }
+    return { tangents, sides, ups };
+  }
+
+  // 旋转最小化参考系（平行传输）——管线/电缆首选
+  function rotationMinimizingFrames(points) {
+    const n = points.length;
+    const tangents = [];
+    for (let i = 0; i < n; i++) {
+      const prev = points[Math.max(0, i - 1)], next = points[Math.min(n - 1, i + 1)];
+      tangents.push(new THREE.Vector3().subVectors(next, prev).normalize());
+    }
+    const sides = new Array(n), ups = new Array(n);
+    // 初始参考向量：选一个与 T0 不平行的世界轴
+    let ref = Math.abs(tangents[0].y) < 0.99 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
+    let side0 = new THREE.Vector3().crossVectors(tangents[0], ref).normalize();
+    let up0 = new THREE.Vector3().crossVectors(side0, tangents[0]).normalize();
+    sides[0] = side0; ups[0] = up0;
+    const q = new THREE.Quaternion();
+    for (let i = 1; i < n; i++) {
+      const t0 = tangents[i - 1], t1 = tangents[i];
+      const dot = Math.max(-1, Math.min(1, t0.dot(t1)));
+      const axis = new THREE.Vector3().crossVectors(t0, t1);
+      if (axis.lengthSq() < 1e-10) { sides[i] = sides[i - 1].clone(); ups[i] = ups[i - 1].clone(); continue; }
+      axis.normalize();
+      const angle = Math.acos(dot);
+      q.setFromAxisAngle(axis, angle);
+      sides[i] = sides[i - 1].clone().applyQuaternion(q).normalize();
+      ups[i] = ups[i - 1].clone().applyQuaternion(q).normalize();
+    }
+    return { tangents, sides, ups };
+  }
+
+  // 沿参考系生成矩形截面扫掠体（道路/管道），capEnds=true 时首尾加盖形成封闭体（便于体积校验/碰撞用）
+  function sweepRectangle(points, frames, width, height, capEnds = false) {
+    const { sides, ups } = frames;
+    const n = points.length;
+    const positions = [], normals = [], uvs = [], indices = [];
+    const hw = width / 2, hh = height / 2;
+    // 每环 4 个角点：顺序必须与 stitchRings 使用的绕序约定匹配（已用 signedVolume 测试验证）
+    for (let i = 0; i < n; i++) {
+      const c = points[i], s = sides[i], u = ups[i];
+      const corners = [
+        [1, 1], [-1, 1], [-1, -1], [1, -1], // 右上、左上、左下、右下（俯视顺时针）
+      ];
+      for (const [su, uu] of corners) {
+        const px = c.x + s.x * su * hw + u.x * uu * hh;
+        const py = c.y + s.y * su * hw + u.y * uu * hh;
+        const pz = c.z + s.z * su * hw + u.z * uu * hh;
+        positions.push(px, py, pz);
+        const nx = s.x * su + u.x * uu, ny = s.y * su + u.y * uu, nz = s.z * su + u.z * uu;
+        const len = Math.hypot(nx, ny, nz) || 1;
+        normals.push(nx / len, ny / len, nz / len);
+        uvs.push((su + 1) / 2, i / (n - 1));
+      }
+    }
+    const W = 4;
+    for (let i = 0; i < n - 1; i++) {
+      for (let s = 0; s < 4; s++) {
+        const sNext = (s + 1) % 4;
+        const a = i * W + s, aNext = i * W + sNext, b = (i + 1) * W + s, bNext = (i + 1) * W + sNext;
+        indices.push(a, b, aNext, aNext, b, bNext);
+      }
+    }
+    if (capEnds) {
+      // 起点盖：4 个角点扇形连接（局部小平面，不追求法线平滑）
+      const addCap = (ringStart, flip) => {
+        const base = positions.length / 3;
+        for (let k = 0; k < 4; k++) { const idx = ringStart + k; positions.push(positions[idx * 3], positions[idx * 3 + 1], positions[idx * 3 + 2]); }
+        const t = frames.tangents[ringStart === 0 ? 0 : n - 1];
+        const nrm = flip ? [-t.x, -t.y, -t.z] : [t.x, t.y, t.z];
+        for (let k = 0; k < 4; k++) normals.push(...nrm), uvs.push(0, 0);
+        if (!flip) indices.push(base, base + 2, base + 1, base, base + 3, base + 2);
+        else indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+      };
+      addCap(0, true);
+      addCap((n - 1) * 4, false);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
+    geo.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(normals), 3));
+    geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(uvs), 2));
+    geo.setIndex(new THREE.BufferAttribute(new Uint32Array(indices), 1));
+    return geo;
+  }
+
+  function createSweptPath(controlPoints, { width = 3, height = 0.3, samplesPerSeg = 12, closed = false, mode = 'road', capEnds = false } = {}) {
+    const points = catmullRomPoints(controlPoints, samplesPerSeg, closed);
+    const frames = mode === 'road' ? roadFrames(points) : rotationMinimizingFrames(points);
+    return sweepRectangle(points, frames, width, height, capEnds);
+  }
+
+  return { catmullRomPoints, roadFrames, rotationMinimizingFrames, sweepRectangle, createSweptPath };
+
+  return { catmullRomPoints, roadFrames, rotationMinimizingFrames, sweepRectangle, createSweptPath };
+})();
+
+const Poisson = (function () {
+// poisson.js — Bridson's Algorithm 泊松圆盘采样
+// 原文档的植被散布用的是 sampleOnTerrain(terrain, density) 占位符（未定义、纯随机）。
+// 纯随机采样在草丛/树木密度高时会产生明显的"扎堆"和"空洞"，肉眼很不自然；
+// 泊松圆盘采样保证任意两点间距 ≥ minDist，同时仍保留局部随机性（"blue noise"特征），
+// 是地形散布类算法的标准选择。
+
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// width,height: 采样域尺寸；minDist: 最小间距；k: 每个活跃点的最大候选尝试次数
+function poissonDiskSample2D(width, height, minDist, k = 30, seed = 1) {
+  const rand = mulberry32(seed);
+  const cellSize = minDist / Math.SQRT2;
+  const gridW = Math.ceil(width / cellSize), gridH = Math.ceil(height / cellSize);
+  const grid = new Array(gridW * gridH).fill(-1); // 存点在 points[] 中的下标
+  const points = [];
+  const active = [];
+
+  function gridIndex(x, y) {
+    const gx = Math.min(gridW - 1, Math.max(0, Math.floor(x / cellSize)));
+    const gy = Math.min(gridH - 1, Math.max(0, Math.floor(y / cellSize)));
+    return gy * gridW + gx;
+  }
+  function farEnoughFromNeighbors(x, y) {
+    const gx = Math.floor(x / cellSize), gy = Math.floor(y / cellSize);
+    for (let oy = -2; oy <= 2; oy++) {
+      for (let ox = -2; ox <= 2; ox++) {
+        const nx = gx + ox, ny = gy + oy;
+        if (nx < 0 || ny < 0 || nx >= gridW || ny >= gridH) continue;
+        const pi = grid[ny * gridW + nx];
+        if (pi === -1) continue;
+        const dx = points[pi][0] - x, dy = points[pi][1] - y;
+        if (dx * dx + dy * dy < minDist * minDist) return false;
+      }
+    }
+    return true;
+  }
+  function addPoint(x, y) {
+    const idx = points.length;
+    points.push([x, y]);
+    grid[gridIndex(x, y)] = idx;
+    active.push(idx);
+    return idx;
+  }
+
+  addPoint(rand() * width, rand() * height);
+  while (active.length > 0) {
+    const ai = Math.floor(rand() * active.length);
+    const pIdx = active[ai];
+    const [px, py] = points[pIdx];
+    let found = false;
+    for (let t = 0; t < k; t++) {
+      const angle = rand() * Math.PI * 2;
+      const r = minDist * (1 + rand()); // [minDist, 2*minDist)
+      const nx = px + Math.cos(angle) * r, ny = py + Math.sin(angle) * r;
+      if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+      if (farEnoughFromNeighbors(nx, ny)) { addPoint(nx, ny); found = true; break; }
+    }
+    if (!found) active.splice(ai, 1);
+  }
+  return points; // [[x,y], ...]
+}
+
+// 将 2D 采样点投影到地形上：heightFn(x,z)=>y，可选 normalFn(x,z)=>[nx,ny,nz] 用于让实例贴合坡面
+function scatterOnHeightfield(points2D, originX, originZ, heightFn, normalFn) {
+  return points2D.map(([x, z]) => {
+    const wx = originX + x, wz = originZ + z;
+    const wy = heightFn(wx, wz);
+    const normal = normalFn ? normalFn(wx, wz) : [0, 1, 0];
+    return { x: wx, y: wy, z: wz, normal };
+  });
+}
+
+
+  return { poissonDiskSample2D, scatterOnHeightfield, mulberry32 };
+})();
+
+const Terrain = (function () {
+
+  const { makeNoise2D } = Noise;
+
+  function createTerrain({ size = 200, resolution = 128, scale = 0.02, octaves = 6, heightScale = 20, seed = 1337 } = {}) {
+    const { fbm } = makeNoise2D(seed);
+    const geo = new THREE.PlaneGeometry(size, size, resolution, resolution);
+    geo.rotateX(-Math.PI / 2); // PlaneGeometry 默认在 XY 平面，旋转到 XZ 水平面作为地形
+    const pos = geo.attributes.position;
+    const heights = new Float32Array(pos.count);
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i), z = pos.getZ(i);
+      const h = fbm(x * scale, z * scale, octaves, 0.5, 2.0) * heightScale;
+      pos.setY(i, h);
+      heights[i] = h;
+    }
+    geo.computeVertexNormals();
+
+    // 顶点着色：按高度分层(水位/草地/岩石/雪线) + 按坡度混入岩石色(陡坡不长草)
+    const colors = new Float32Array(pos.count * 3);
+    const normal = geo.attributes.normal;
+    const bands = [
+      { h: -heightScale * 10, c: [0.55, 0.5, 0.35] },  // 沙滩/低地（有限哨兵值，避免 -Infinity 参与插值除法产生 NaN）
+      { h: heightScale * 0.05, c: [0.30, 0.45, 0.20] }, // 草地
+      { h: heightScale * 0.45, c: [0.35, 0.33, 0.28] }, // 岩石
+      { h: heightScale * 0.75, c: [0.92, 0.92, 0.95] }, // 雪线
+    ];
+    function bandColor(h) {
+      for (let i = bands.length - 1; i >= 0; i--) if (h >= bands[i].h) {
+        const next = bands[i + 1];
+        if (!next) return bands[i].c;
+        const t = Math.min(1, Math.max(0, (h - bands[i].h) / (next.h - bands[i].h)));
+        return [
+          bands[i].c[0] + (next.c[0] - bands[i].c[0]) * t,
+          bands[i].c[1] + (next.c[1] - bands[i].c[1]) * t,
+          bands[i].c[2] + (next.c[2] - bands[i].c[2]) * t,
+        ];
+      }
+      return bands[0].c;
+    }
+    const rockColor = [0.32, 0.30, 0.27];
+    for (let i = 0; i < pos.count; i++) {
+      const slope = 1 - Math.abs(normal.getY(i)); // 0=平地, 1=垂直峭壁
+      let [r, g, b] = bandColor(heights[i]);
+      const rockMix = Math.min(1, Math.max(0, (slope - 0.35) / 0.4));
+      r = r + (rockColor[0] - r) * rockMix;
+      g = g + (rockColor[1] - g) * rockMix;
+      b = b + (rockColor[2] - b) * rockMix;
+      colors[i * 3] = r; colors[i * 3 + 1] = g; colors[i * 3 + 2] = b;
+    }
+    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+    // 提供地形查询接口：给定世界 x,z 返回插值高度（供道路贴地、植被散布、人物站立使用）
+    function heightAt(x, z) {
+      const gx = (x + size / 2) / size * resolution;
+      const gz = (z + size / 2) / size * resolution;
+      const ix = Math.max(0, Math.min(resolution - 1, Math.floor(gx)));
+      const iz = Math.max(0, Math.min(resolution - 1, Math.floor(gz)));
+      const fx = gx - ix, fz = gz - iz;
+      const W = resolution + 1;
+      const idx = (r, c) => r * W + c;
+      const h00 = heights[idx(iz, ix)], h10 = heights[idx(iz, ix + 1)];
+      const h01 = heights[idx(iz + 1, ix)], h11 = heights[idx(iz + 1, ix + 1)];
+      const hx0 = h00 + (h10 - h00) * fx, hx1 = h01 + (h11 - h01) * fx;
+      return hx0 + (hx1 - hx0) * fz;
+    }
+    return { geometry: geo, heightAt, heights, resolution, size };
+  }
+
+  return { createTerrain };
+
+  return { createTerrain };
+})();
+
+const Assembly = (function () {
+
+  const { createSphere, createCylinder, createCapsule, createBox, createTorus, mergeGeometries, transformGeometry, makeTransform } = Geo;
+
+  // ---------- 潜水艇：船体用胶囊体（首尾天然圆滑无缝，优于"圆柱+半球"拼接可能露缝）----------
+  function createSubmarine({ length = 8, radius = 0.8 } = {}) {
+    const parts = [];
+    // 船体：capsule 的"圆柱段长度"= length - 2*radius，两端半球共同构成艇艏/艇艉流线
+    const hull = createCapsule(radius, Math.max(0.1, length - 2 * radius), 12, 24);
+    transformGeometry(hull, makeTransform({ rotation: [Math.PI / 2, 0, 0] })); // capsule 默认沿 Y，转到沿 Z
+    parts.push(hull);
+
+    // 指挥塔（sail）
+    const sail = createBox(radius * 0.9, radius * 1.2, radius * 1.6);
+    transformGeometry(sail, makeTransform({ position: [0, radius * 0.9, length * 0.08] }));
+    parts.push(sail);
+
+    // 潜望镜
+    const periscope = createCylinder(0.03, 0.03, radius * 1.5, 8, 1);
+    transformGeometry(periscope, makeTransform({ position: [0, radius * 1.5, length * 0.05] }));
+    parts.push(periscope);
+
+    // 艏艉水平舵（diving planes）
+    for (const zSign of [1, -1]) {
+      const plane = createBox(radius * 2.2, 0.04, radius * 0.5);
+      transformGeometry(plane, makeTransform({ position: [0, 0, zSign * length * 0.38] }));
+      parts.push(plane);
+    }
+    // 尾部十字舵
+    for (let i = 0; i < 4; i++) {
+      const fin = createBox(0.04, radius * 1.1, radius * 0.7);
+      transformGeometry(fin, makeTransform({ position: [0, 0, -length * 0.48], rotation: [0, 0, (Math.PI / 2) * i] }));
+      parts.push(fin);
+    }
+    // 螺旋桨：中心毂 + 4 片桨叶（用扁盒子绕轴旋转角度模拟桨距角，而非原文档"略"过的部分）
+    const hub = createCylinder(radius * 0.15, radius * 0.15, 0.3, 12);
+    transformGeometry(hub, makeTransform({ position: [0, 0, -length / 2 - 0.1], rotation: [Math.PI / 2, 0, 0] }));
+    parts.push(hub);
+    for (let i = 0; i < 4; i++) {
+      const blade = createBox(0.04, radius * 0.7, 0.18);
+      const angle = (Math.PI / 2) * i;
+      const pitch = 0.5; // 桨距角(弧度)，让桨叶相对旋转平面倾斜，视觉上更像螺旋桨而非平板
+      transformGeometry(blade, makeTransform({
+        position: [Math.sin(angle) * radius * 0.4, Math.cos(angle) * radius * 0.4, -length / 2 - 0.1],
+        rotation: [0, 0, angle + pitch],
+      }));
+      parts.push(blade);
+    }
+    return mergeGeometries(parts);
+  }
+
+  // ---------- 人体基础骨架：8 头身比例（美术/人体工程学通用惯例，非任何特定版权作品）----------
+  // 仅用胶囊/球体拼出比例正确的"人形代理"，类似游戏开发中常见的 capsule rig / ragdoll 代理网格。
+  // 比例按经典 8 头身画法惯例，以总高 H 的分数直接给出关键高度点(肩/髋/膝)，
+  // 保证"髋高度 = 大腿长 + 小腿长"严格成立，脚底恰好落在 y=0（此前版本按 headH 独立
+  // 猜测四肢长度、且误给手臂大腿加了 90° 旋转，两者共同导致模型严重变形，已修正）。
+  function buildHumanoidBase({ height = 1.8 } = {}) {
+    const H = height;
+    const headH = H / 8, headR = headH * 0.5;
+    const shoulderY = H * 0.8125;   // 肩峰 ≈ 距顶 1.5 头身
+    const hipY = H * 0.5;           // 髋(裆)高 ≈ 4 头身
+    const kneeY = H * 0.23;         // 膝高 ≈ 大腿 0.27H + 小腿 0.23H = 0.5H，恰好等于 hipY
+    const wristY = H * 0.3125;      // 腕高 ≈ 2.5 头身（指尖约达大腿中部）
+    const elbowY = shoulderY - (shoulderY - wristY) * 0.54;
+
+    const parts = [];
+    const add = (geo, pos, rot) => { transformGeometry(geo, makeTransform({ position: pos, rotation: rot || [0, 0, 0] })); parts.push(geo); };
+
+    add(createSphere(headR, 16, 12), [0, H - headR, 0]);
+    add(createCylinder(headR * 0.4, headR * 0.45, headH * 0.4, 10), [0, H - headH * 1.15, 0]);
+
+    const torsoTop = H - headH * 1.3;
+    const torsoLen = torsoTop - hipY;
+    add(createCapsule(headR * 1.35, Math.max(0.05, torsoLen - headR * 1.35 * 1.6), 8, 16), [0, (torsoTop + hipY) / 2, 0]);
+    add(createCapsule(headR * 1.15, headR * 0.3, 6, 14), [0, hipY, 0], [0, 0, Math.PI / 2]); // 骨盆：横置胶囊体现髋宽
+
+    for (const side of [1, -1]) {
+      const shoulderX = side * headR * 1.5, hipX = side * headR * 0.65;
+      // 上臂、前臂、大腿、小腿均沿 Y 轴悬垂——不加旋转，直接用胶囊体默认朝向
+      add(createCapsule(headR * 0.32, (shoulderY - elbowY) - headR * 0.64, 6, 12), [shoulderX, (shoulderY + elbowY) / 2, 0]);
+      add(createCapsule(headR * 0.26, (elbowY - wristY) - headR * 0.52, 6, 12), [shoulderX, (elbowY + wristY) / 2, 0]);
+      add(createSphere(headR * 0.32, 10, 8), [shoulderX, wristY - headR * 0.3, 0]);
+      add(createCapsule(headR * 0.42, (hipY - kneeY) - headR * 0.84, 6, 12), [hipX, (hipY + kneeY) / 2, 0]);
+      add(createCapsule(headR * 0.32, kneeY - headR * 0.64, 6, 12), [hipX, kneeY / 2, 0]);
+      add(createBox(headR * 0.5, headR * 0.35, headR * 0.9), [hipX, headR * 0.17, headR * 0.25]);
+    }
+    return mergeGeometries(parts);
+  }
+
+  // ---------- SDF 布尔运算机械接头：演示圆角融合(smoothUnion)与开孔(subtract) ----------
+  // 直接回答原文档"通过 CSG 构建高精度机械部件"这句话——给出一个真正可跑的接头模型。
+  function createPipeJointSDF({ armLen = 1.2, outerR = 0.35, boreR = 0.18, fillet = 0.12 } = {}) {
+    const { SDF, CSG, surfaceNets } = SDFSys;
+    // 三向 T 形接头主体：三根圆角融合的胶囊臂
+    const sdfSolid = (x, y, z) => {
+      const armX = SDF.capsule(x, y, z, -armLen, 0, 0, armLen, 0, 0, outerR);
+      const armY = SDF.capsule(x, y, z, 0, -armLen, 0, 0, armLen, 0, outerR);
+      const armZ = SDF.capsule(x, y, z, 0, 0, -armLen * 0.6, 0, 0, armLen * 0.6, outerR * 0.85);
+      let d = CSG.smoothUnion(armX, armY, fillet);
+      d = CSG.smoothUnion(d, armZ, fillet);
+      return d;
+    };
+    // 三向贯穿孔（沿三轴的圆柱孔，模拟管道内腔）
+    const sdfBore = (x, y, z) => {
+      const boreX = SDF.cylinderY(x, y, z, 0, 0, 0, boreR, armLen * 1.5) - 0; // 借用 cylinderY 但需转轴，见下方替代实现
+      return boreX;
+    };
+    // cylinderY 只沿 Y 轴；三向孔用 capsule(半径较小、无端点圆头感)的方式更省事，直接用无限长圆柱近似(足够穿透即可)
+    function infiniteCylX(x, y, z, r) { return Math.hypot(y, z) - r; }
+    function infiniteCylY(x, y, z, r) { return Math.hypot(x, z) - r; }
+    function infiniteCylZ(x, y, z, r) { return Math.hypot(x, y) - r; }
+    const sdfFinal = (x, y, z) => {
+      const solid = sdfSolid(x, y, z);
+      const bore = CSG.union(CSG.union(infiniteCylX(x, y, z, boreR), infiniteCylY(x, y, z, boreR)), infiniteCylZ(x, y, z, boreR));
+      return CSG.subtract(solid, bore);
+    };
+    const b = armLen + outerR * 1.3;
+    return surfaceNets(sdfFinal, { min: [-b, -b, -b * 0.75], max: [b, b, b * 0.75] }, [44, 44, 34]);
+  }
+
+  return { createSubmarine, buildHumanoidBase, createPipeJointSDF };
+
+  return { createSubmarine, buildHumanoidBase, createPipeJointSDF };
+})();
+
+const Kmeans = (function () {
+// kmeans.js — RGB 空间 k-means 聚类，用于从图像提取主色调（调色板）
+// 定位：原文档的"纹理风格迁移"依赖外部 TFJS 风格迁移模型（需联网加载，体积以十MB计，
+// 在离线或内网环境会直接失败）。调色板提取是一个更"轻"的替代/兜底方案——不还原笔触
+// 和纹理细节，但能抓住"这张画整体是暖橙昏黄还是冷蓝清冽"这一最重要的视觉印象，
+// 且 100% 本地计算、零依赖、零下载体积。
+
+function kmeansPalette(pixels, k = 5, iterations = 12, seed = 1) {
+  // pixels: Uint8ClampedArray/Array，形如 [r,g,b,a, r,g,b,a, ...]
+  let a = seed;
+  function rand() { a |= 0; a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }
+
+  const n = pixels.length / 4;
+  if (n === 0) return [];
+  // k-means++ 初始化：第一个中心随机选，后续按"距已有中心越远、被选中概率越高"选取，
+  // 比纯随机初始化更不容易收敛到局部次优解（尤其当画面中某种颜色占比极小但很重要时）。
+  const centers = [];
+  const first = Math.floor(rand() * n) * 4;
+  centers.push([pixels[first], pixels[first + 1], pixels[first + 2]]);
+  const distSq = new Float64Array(n);
+  for (let c = 1; c < k; c++) {
+    let sum = 0;
+    for (let i = 0; i < n; i++) {
+      const r = pixels[i * 4], g = pixels[i * 4 + 1], b = pixels[i * 4 + 2];
+      let minD = Infinity;
+      for (const ctr of centers) { const dr = r - ctr[0], dg = g - ctr[1], db = b - ctr[2]; minD = Math.min(minD, dr * dr + dg * dg + db * db); }
+      distSq[i] = minD; sum += minD;
+    }
+    let target = rand() * sum, idx = 0;
+    for (; idx < n; idx++) { target -= distSq[idx]; if (target <= 0) break; }
+    idx = Math.min(idx, n - 1);
+    centers.push([pixels[idx * 4], pixels[idx * 4 + 1], pixels[idx * 4 + 2]]);
+  }
+
+  const assign = new Int32Array(n);
+  for (let iter = 0; iter < iterations; iter++) {
+    for (let i = 0; i < n; i++) {
+      const r = pixels[i * 4], g = pixels[i * 4 + 1], b = pixels[i * 4 + 2];
+      let best = 0, bestD = Infinity;
+      for (let c = 0; c < k; c++) {
+        const dr = r - centers[c][0], dg = g - centers[c][1], db = b - centers[c][2];
+        const d = dr * dr + dg * dg + db * db;
+        if (d < bestD) { bestD = d; best = c; }
+      }
+      assign[i] = best;
+    }
+    const sums = Array.from({ length: k }, () => [0, 0, 0, 0]);
+    for (let i = 0; i < n; i++) {
+      const c = assign[i], s = sums[c];
+      s[0] += pixels[i * 4]; s[1] += pixels[i * 4 + 1]; s[2] += pixels[i * 4 + 2]; s[3]++;
+    }
+    for (let c = 0; c < k; c++) if (sums[c][3] > 0) centers[c] = [sums[c][0] / sums[c][3], sums[c][1] / sums[c][3], sums[c][2] / sums[c][3]];
+  }
+
+  const counts = new Array(k).fill(0);
+  for (let i = 0; i < n; i++) counts[assign[i]]++;
+  return centers
+    .map((c, i) => ({ r: c[0] / 255, g: c[1] / 255, b: c[2] / 255, weight: counts[i] / n }))
+    .sort((a, b) => b.weight - a.weight);
+}
+
+
+  return { kmeansPalette };
+})();
+
+// ============================================================
+// 场景搭建
+// ============================================================
+let scene, camera, renderer;
+let terrainData, terrainMeshObj, roadMesh, grassMesh, treeMesh, waterMesh, pedestalMesh, humanoidMesh, submarineMesh, pipeJointMesh;
+let currentSeed = 7;
+const TERRAIN_SIZE = 220, TERRAIN_RES = 128;
+
+function initScene() {
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x0a0d12);
+  scene.fog = new THREE.FogExp2(0x0a0d12, 0.0032);
+
+  camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 2000);
+
+  const canvas = document.getElementById('scene-canvas');
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  if ('outputEncoding' in renderer) renderer.outputEncoding = THREE.sRGBEncoding;
+
+  const hemi = new THREE.HemisphereLight(0x8fb3e8, 0x33291f, 0.6);
+  scene.add(hemi);
+  const sun = new THREE.DirectionalLight(0xfff1d6, 1.15);
+  sun.position.set(70, 100, 40);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048, 2048);
+  const sc = sun.shadow.camera;
+  sc.left = -130; sc.right = 130; sc.top = 130; sc.bottom = -130; sc.far = 320;
+  scene.add(sun);
+  scene.add(sun.target);
+
+  initOrbitControls();
+  window.addEventListener('resize', onResize);
+}
+
+function onResize() {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+// ---------- 极简轨道相机控制（指针事件统一鼠标/触摸，另加双指捏合缩放）----------
+const orbit = { target: new THREE.Vector3(0, 10, 0), radius: 95, theta: 0.9, phi: 1.05, dragging: false, lastX: 0, lastY: 0 };
+function updateCameraFromOrbit() {
+  const sp = Math.sin(orbit.phi);
+  camera.position.set(
+    orbit.target.x + orbit.radius * sp * Math.sin(orbit.theta),
+    orbit.target.y + orbit.radius * Math.cos(orbit.phi),
+    orbit.target.z + orbit.radius * sp * Math.cos(orbit.theta)
+  );
+  camera.lookAt(orbit.target);
+}
+function initOrbitControls() {
+  const el = renderer.domElement;
+  el.addEventListener('pointerdown', (e) => { orbit.dragging = true; orbit.lastX = e.clientX; orbit.lastY = e.clientY; try { el.setPointerCapture(e.pointerId); } catch (err) {} });
+  el.addEventListener('pointerup', () => { orbit.dragging = false; });
+  el.addEventListener('pointercancel', () => { orbit.dragging = false; });
+  el.addEventListener('pointerleave', () => { orbit.dragging = false; });
+  el.addEventListener('pointermove', (e) => {
+    if (!orbit.dragging) return;
+    const dx = e.clientX - orbit.lastX, dy = e.clientY - orbit.lastY;
+    orbit.lastX = e.clientX; orbit.lastY = e.clientY;
+    orbit.theta -= dx * 0.0055;
+    orbit.phi = Math.min(Math.PI * 0.49, Math.max(0.12, orbit.phi - dy * 0.0055));
+    updateCameraFromOrbit();
+  });
+  el.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    orbit.radius = Math.min(320, Math.max(6, orbit.radius * (1 + e.deltaY * 0.001)));
+    updateCameraFromOrbit();
+  }, { passive: false });
+  let pinchStartDist = null, pinchStartRadius = null;
+  el.addEventListener('touchstart', (e) => {
+    if (e.touches.length === 2) {
+      pinchStartDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+      pinchStartRadius = orbit.radius;
+    }
+  }, { passive: true });
+  el.addEventListener('touchmove', (e) => {
+    if (e.touches.length === 2 && pinchStartDist) {
+      const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+      orbit.radius = Math.min(320, Math.max(6, pinchStartRadius * (pinchStartDist / d)));
+      updateCameraFromOrbit();
+    }
+  }, { passive: true });
+  el.addEventListener('touchend', (e) => { if (e.touches.length < 2) pinchStartDist = null; });
+  updateCameraFromOrbit();
+}
+
+// ============================================================
+// 树木合并几何：复用 Geo.mergeGeometries + 顶点色区分树干/树冠
+// ============================================================
+function paintVertexColors(geo, hex) {
+  const c = new THREE.Color(hex);
+  const n = geo.attributes.position.count;
+  const arr = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) { arr[i * 3] = c.r; arr[i * 3 + 1] = c.g; arr[i * 3 + 2] = c.b; }
+  return arr;
+}
+function buildTreeGeometry() {
+  const trunk = Geo.createCylinder(0.12, 0.2, 1.7, 7);
+  const foliage = Geo.createSphere(1.05, 8, 6);
+  Geo.transformGeometry(trunk, Geo.makeTransform({ position: [0, 0.85, 0] }));
+  Geo.transformGeometry(foliage, Geo.makeTransform({ position: [0, 1.55, 0] }));
+  const trunkColor = paintVertexColors(trunk, 0x5b4530);
+  const foliageColor = paintVertexColors(foliage, 0x2f5e2a);
+  const merged = Geo.mergeGeometries([trunk, foliage]);
+  const colorArr = new Float32Array(trunkColor.length + foliageColor.length);
+  colorArr.set(trunkColor, 0); colorArr.set(foliageColor, trunkColor.length);
+  merged.setAttribute('color', new THREE.BufferAttribute(colorArr, 3));
+  return merged;
+}
+
+// ============================================================
+// 世界构建编排
+// ============================================================
+function clearWorld() {
+  [terrainMeshObj, roadMesh, grassMesh, treeMesh, waterMesh, pedestalMesh, humanoidMesh, submarineMesh, pipeJointMesh].forEach((m) => { if (m) scene.remove(m); });
+}
+
+function buildWorld(seed) {
+  currentSeed = seed;
+  clearWorld();
+
+  terrainData = Terrain.createTerrain({ size: TERRAIN_SIZE, resolution: TERRAIN_RES, scale: 0.018, octaves: 6, heightScale: 22, seed });
+  const terrainMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0.02 });
+  terrainMeshObj = new THREE.Mesh(terrainData.geometry, terrainMat);
+  terrainMeshObj.receiveShadow = true;
+  scene.add(terrainMeshObj);
+
+  const waterGeo = new THREE.PlaneGeometry(TERRAIN_SIZE * 1.5, TERRAIN_SIZE * 1.5);
+  waterGeo.rotateX(-Math.PI / 2);
+  waterMesh = new THREE.Mesh(waterGeo, new THREE.MeshStandardMaterial({ color: 0x1c5b7a, transparent: true, opacity: 0.72, roughness: 0.12, metalness: 0.15 }));
+  waterMesh.position.y = -7;
+  scene.add(waterMesh);
+
+  const roadPtsXZ = [[-90, -70], [-42, -32], [0, 8], [38, -14], [82, 22]];
+  const roadPts3D = roadPtsXZ.map(([x, z]) => [x, terrainData.heightAt(x, z) + 0.15, z]);
+  const roadGeo = PathSweep.createSweptPath(roadPts3D, { width: 4, height: 0.3, samplesPerSeg: 14, mode: 'road' });
+  roadMesh = new THREE.Mesh(roadGeo, new THREE.MeshStandardMaterial({ color: 0x3a3d42, roughness: 0.95 }));
+  roadMesh.receiveShadow = true; roadMesh.castShadow = true;
+  scene.add(roadMesh);
+
+  buildVegetation(seed, 1.0);
+
+  const humanoidGeo = Assembly.buildHumanoidBase({ height: 1.8 });
+  humanoidMesh = new THREE.Mesh(humanoidGeo, new THREE.MeshStandardMaterial({ color: 0xd8a878, roughness: 0.75 }));
+  const hx = 6, hz = -2;
+  humanoidMesh.position.set(hx, terrainData.heightAt(hx, hz), hz);
+  humanoidMesh.castShadow = true;
+  scene.add(humanoidMesh);
+
+  const subGeo = Assembly.createSubmarine({ length: 9, radius: 0.9 });
+  submarineMesh = new THREE.Mesh(subGeo, new THREE.MeshStandardMaterial({ color: 0x2b3b2e, roughness: 0.5, metalness: 0.35 }));
+  submarineMesh.position.set(-40, -6.2, 55);
+  submarineMesh.rotation.y = 0.6;
+  submarineMesh.castShadow = true;
+  scene.add(submarineMesh);
+
+  const pipeGeo = Assembly.createPipeJointSDF({ armLen: 1.1, outerR: 0.32, boreR: 0.16, fillet: 0.12 });
+  const px = 22, pz = 14;
+  const baseY = terrainData.heightAt(px, pz);
+  pedestalMesh = new THREE.Mesh(Geo.createCylinder(1, 1.2, 0.6, 20), new THREE.MeshStandardMaterial({ color: 0x2a2d33, roughness: 0.8 }));
+  pedestalMesh.position.set(px, baseY + 0.3, pz);
+  pedestalMesh.castShadow = true; pedestalMesh.receiveShadow = true;
+  scene.add(pedestalMesh);
+  pipeJointMesh = new THREE.Mesh(pipeGeo, new THREE.MeshStandardMaterial({ color: 0x9aa3ad, roughness: 0.32, metalness: 0.8 }));
+  pipeJointMesh.position.set(px, baseY + 0.6 + 1.15, pz);
+  pipeJointMesh.rotation.x = 0.3;
+  pipeJointMesh.castShadow = true;
+  scene.add(pipeJointMesh);
+
+  const sun = scene.children.find((c) => c.isDirectionalLight);
+  if (sun) { sun.target.position.set(0, 0, 0); }
+
+  updateStatsGeometryCounts();
+}
+
+function buildVegetation(seed, densityMul) {
+  [grassMesh, treeMesh].forEach((m) => { if (m) scene.remove(m); });
+  const half = TERRAIN_SIZE / 2;
+  const dummy = new THREE.Object3D();
+
+  const grassMinDist = Math.max(0.5, 1.7 / densityMul);
+  const grassPts = Poisson.poissonDiskSample2D(TERRAIN_SIZE, TERRAIN_SIZE, grassMinDist, 18, seed + 1);
+  const grassGeo = Geo.createBox(0.12, 0.55, 0.02);
+  grassMesh = new THREE.InstancedMesh(grassGeo, new THREE.MeshStandardMaterial({ color: 0x4c7a34, side: THREE.DoubleSide, roughness: 1 }), grassPts.length);
+  let vi = 0;
+  for (const [gx, gz] of grassPts) {
+    const wx = gx - half, wz = gz - half;
+    const wy = terrainData.heightAt(wx, wz);
+    if (wy < -5) continue;
+    dummy.position.set(wx, wy + 0.24, wz);
+    dummy.rotation.set(0, Math.random() * Math.PI * 2, 0);
+    const s = 0.7 + Math.random() * 0.6;
+    dummy.scale.set(s, s * (0.7 + Math.random() * 0.6), s);
+    dummy.updateMatrix();
+    grassMesh.setMatrixAt(vi++, dummy.matrix);
+  }
+  grassMesh.count = vi;
+  grassMesh.instanceMatrix.needsUpdate = true;
+  grassMesh.castShadow = false; grassMesh.receiveShadow = false;
+  scene.add(grassMesh);
+
+  const treeMinDist = Math.max(2.5, 9 / densityMul);
+  const treePts = Poisson.poissonDiskSample2D(TERRAIN_SIZE, TERRAIN_SIZE, treeMinDist, 22, seed + 2);
+  const treeGeo = buildTreeGeometry();
+  treeMesh = new THREE.InstancedMesh(treeGeo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9 }), treePts.length);
+  let ti = 0;
+  for (const [gx, gz] of treePts) {
+    const wx = gx - half, wz = gz - half;
+    const wy = terrainData.heightAt(wx, wz);
+    if (wy < -4 || wy > 16) continue;
+    dummy.position.set(wx, wy, wz);
+    dummy.rotation.set(0, Math.random() * Math.PI * 2, 0);
+    const s = 0.75 + Math.random() * 0.6;
+    dummy.scale.set(s, s, s);
+    dummy.updateMatrix();
+    treeMesh.setMatrixAt(ti++, dummy.matrix);
+  }
+  treeMesh.count = ti;
+  treeMesh.instanceMatrix.needsUpdate = true;
+  treeMesh.castShadow = true;
+  scene.add(treeMesh);
+  updateStatsGeometryCounts();
+}
+
+// ============================================================
+// 图像 → k-means 调色板 → 重新着色地形/雾效（零外部依赖，始终可用）
+// ============================================================
+function loadImageFile(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = URL.createObjectURL(file);
+  });
+}
+function extractPaletteFromImage(img, k) {
+  const canvas = document.createElement('canvas');
+  const maxDim = 120;
+  const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+  canvas.width = Math.max(1, Math.round(img.width * scale));
+  canvas.height = Math.max(1, Math.round(img.height * scale));
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+  return Kmeans.kmeansPalette(data, k, 10, 7);
+}
+function renderPaletteSwatches(palette) {
+  const row = document.getElementById('palette-row');
+  row.innerHTML = '';
+  for (const p of palette) {
+    const sw = document.createElement('div');
+    sw.className = 'swatch';
+    sw.style.background = `rgb(${Math.round(p.r * 255)},${Math.round(p.g * 255)},${Math.round(p.b * 255)})`;
+    sw.title = `占比 ${(p.weight * 100).toFixed(1)}%`;
+    row.appendChild(sw);
+  }
+}
+function applyPaletteToScene(palette) {
+  if (!palette.length || !terrainMeshObj) return;
+  const colorAttr = terrainMeshObj.geometry.attributes.color;
+  const heights = terrainData.heights;
+  const sorted = [...palette].sort((a, b) => (a.r + a.g + a.b) - (b.r + b.g + b.b));
+  let minH = Infinity, maxH = -Infinity;
+  for (const h of heights) { minH = Math.min(minH, h); maxH = Math.max(maxH, h); }
+  const span = (maxH - minH) || 1;
+  for (let i = 0; i < colorAttr.count; i++) {
+    const t = (heights[i] - minH) / span;
+    const idxF = t * (sorted.length - 1);
+    const i0 = Math.floor(idxF), i1 = Math.min(sorted.length - 1, i0 + 1), f = idxF - i0;
+    const c0 = sorted[i0], c1 = sorted[i1];
+    colorAttr.setXYZ(i, c0.r + (c1.r - c0.r) * f, c0.g + (c1.g - c0.g) * f, c0.b + (c1.b - c0.b) * f);
+  }
+  colorAttr.needsUpdate = true;
+  const dom = palette[0];
+  const fogColor = new THREE.Color(dom.r * 0.45 + 0.05, dom.g * 0.45 + 0.05, dom.b * 0.5 + 0.08);
+  scene.fog.color.copy(fogColor);
+  scene.background.copy(fogColor);
+}
+
+// ============================================================
+// 可选 AI 增强层：TensorFlow.js + COCO-SSD（网络/沙盒可能拦截，全程 try/catch 兜底）
+// ============================================================
+let tfReady = false, cocoModel = null, lastUploadedImg = null;
+function loadScriptOnce(src) {
+  return new Promise((resolve, reject) => {
+    const existing = document.querySelector(`script[data-src="${src}"]`);
+    if (existing) { resolve(); return; }
+    const s = document.createElement('script');
+    s.src = src; s.dataset.src = src;
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error('脚本加载失败: ' + src));
+    document.head.appendChild(s);
+  });
+}
+async function enableAIEnhance() {
+  const statusEl = document.getElementById('ai-status');
+  const btn = document.getElementById('btn-ai');
+  btn.disabled = true;
+  statusEl.className = 'status-text';
+  statusEl.textContent = '正在加载 TensorFlow.js…（依赖外部 CDN，稍等）';
+  try {
+    if (!window.tf) await loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/tensorflow/4.22.0/tf.min.js');
+    statusEl.textContent = '正在加载 COCO-SSD 目标检测模型…';
+    if (!window.cocoSsd) await loadScriptOnce('https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd');
+    cocoModel = await cocoSsd.load();
+    tfReady = true;
+    statusEl.className = 'status-text ok';
+    statusEl.textContent = 'AI 增强已就绪。上传图片后将按检测到的物体数量调整植被密度。';
+    if (lastUploadedImg) await detectAndAdjustLayout(lastUploadedImg);
+  } catch (err) {
+    statusEl.className = 'status-text warn';
+    statusEl.textContent = 'AI 增强当前不可用（本预览环境的沙盒网络策略可能拦截了外部模型加载；这段代码在你自己的项目/服务器中可正常工作）。已继续使用 03 的本地调色板方案。';
+    console.warn('AI enhance unavailable:', err);
+  } finally {
+    btn.disabled = false;
+  }
+}
+async function detectAndAdjustLayout(img) {
+  if (!tfReady || !cocoModel) return;
+  try {
+    const predictions = await cocoModel.detect(img);
+    const densityMul = Math.min(2.2, 0.6 + predictions.length * 0.18);
+    buildVegetation(currentSeed, densityMul);
+    const statusEl = document.getElementById('ai-status');
+    statusEl.className = 'status-text ok';
+    statusEl.textContent = `检测到 ${predictions.length} 个物体（${[...new Set(predictions.map(p => p.class))].join('、') || '无'}），已据此调整植被密度 ×${densityMul.toFixed(2)}。`;
+  } catch (err) {
+    console.warn('detect failed', err);
+  }
+}
+
+// ============================================================
+// UI 绑定
+// ============================================================
+function initUI() {
+  document.getElementById('panel-toggle').addEventListener('click', () => {
+    document.getElementById('panel').classList.toggle('collapsed');
+  });
+  document.getElementById('btn-regenerate').addEventListener('click', () => {
+    buildWorld(Math.floor(Math.random() * 100000));
+  });
+  const wireSwitch = document.getElementById('switch-wire');
+  let wireOn = false;
+  wireSwitch.addEventListener('click', () => {
+    wireOn = !wireOn;
+    wireSwitch.classList.toggle('on', wireOn);
+    scene.traverse((obj) => { if (obj.isMesh && obj.material && 'wireframe' in obj.material) obj.material.wireframe = wireOn; });
+  });
+  document.getElementById('upload-input').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const statusEl = document.getElementById('palette-status');
+    statusEl.className = 'status-text';
+    statusEl.textContent = '正在提取调色板…';
+    try {
+      const img = await loadImageFile(file);
+      lastUploadedImg = img;
+      const palette = extractPaletteFromImage(img, 5);
+      renderPaletteSwatches(palette);
+      applyPaletteToScene(palette);
+      statusEl.className = 'status-text ok';
+      statusEl.textContent = '已按主色调重新着色地形与氛围。';
+      if (tfReady) await detectAndAdjustLayout(img);
+    } catch (err) {
+      statusEl.className = 'status-text warn';
+      statusEl.textContent = '图片处理失败：' + err.message;
+    }
+  });
+  document.getElementById('btn-ai').addEventListener('click', enableAIEnhance);
+}
+
+// ============================================================
+// 统计信息 & 主循环
+// ============================================================
+function updateStatsGeometryCounts() {
+  let verts = 0, tris = 0;
+  scene.traverse((obj) => {
+    if (obj.isMesh || obj.isInstancedMesh) {
+      const g = obj.geometry;
+      if (!g) return;
+      const vCount = g.attributes.position ? g.attributes.position.count : 0;
+      const iCount = g.index ? g.index.count : vCount;
+      const mult = obj.isInstancedMesh ? obj.count : 1;
+      verts += vCount * mult;
+      tris += (iCount / 3) * mult;
+    }
+  });
+  document.getElementById('stat-verts').textContent = verts.toLocaleString();
+  document.getElementById('stat-tris').textContent = Math.round(tris).toLocaleString();
+}
+
+let lastFrameTime = performance.now(), frameCount = 0, fpsAccum = 0;
+function animate() {
+  requestAnimationFrame(animate);
+  const now = performance.now();
+  const dt = now - lastFrameTime;
+  lastFrameTime = now;
+  frameCount++; fpsAccum += dt;
+  if (fpsAccum >= 500) {
+    document.getElementById('stat-fps').textContent = Math.round(frameCount / (fpsAccum / 1000));
+    frameCount = 0; fpsAccum = 0;
+  }
+  renderer.render(scene, camera);
+}
+
+function init() {
+  initScene();
+  buildWorld(currentSeed);
+  initUI();
+  document.getElementById('loading').style.display = 'none';
+  animate();
+}
+
+if (typeof THREE === 'undefined') {
+  document.getElementById('loading-text').textContent = 'Three.js 加载失败：请检查网络设置（cdnjs.cloudflare.com 是否可访问）。';
+} else {
+  init();
+}
+
+
+</script>
+</body>
+</html>
